@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { SetupForm } from '@/components/PreInterview/SetupForm';
 import { AudioHardwareModal } from '@/components/PreInterview/AudioHardwareModal';
 import { InterviewRoom } from '@/components/LiveSession/InterviewRoom';
 import { ScorecardView } from '@/components/PostInterview/ScorecardView';
 import { PaywallModal } from '@/components/Monetization/PaywallModal';
+import { LlmSettingsModal } from '@/components/Settings/LlmSettingsModal';
 import { 
   CandidateProfile, 
   ChatMessage, 
@@ -23,12 +24,36 @@ export default function Home() {
   const [scorecardReport, setScorecardReport] = useState<ScorecardReport | null>(null);
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+  const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
+
+  // Open-Source LLM Settings (Groq / LLaMA 3.3)
+  const [groqApiKey, setGroqApiKey] = useState('');
+  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
 
   const [subscription, setSubscription] = useState<UserSubscription>({
     plan: 'free',
     freeSessionUsed: false,
     sessionsRemaining: 1,
   });
+
+  // Load saved LLM settings from localStorage on client mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedKey = localStorage.getItem('groq_api_key');
+      const savedModel = localStorage.getItem('groq_model');
+      if (savedKey) setGroqApiKey(savedKey);
+      if (savedModel) setGroqModel(savedModel);
+    }
+  }, []);
+
+  const handleSaveLlmSettings = (key: string, model: string) => {
+    setGroqApiKey(key);
+    setGroqModel(model);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('groq_api_key', key);
+      localStorage.setItem('groq_model', model);
+    }
+  };
 
   // Step 1: Pre-Interview form submitted -> open Audio Hardware Test
   const handleStartHardwareTest = (candidateData: CandidateProfile) => {
@@ -60,6 +85,8 @@ export default function Home() {
         body: JSON.stringify({
           profile,
           messages: finalMessages,
+          groqApiKey,
+          groqModel,
         }),
       });
 
@@ -105,7 +132,9 @@ export default function Home() {
       <Navbar
         status={status}
         subscription={subscription}
+        hasGroqKey={!!groqApiKey}
         onOpenPricing={() => setIsPaywallOpen(true)}
+        onOpenSettings={() => setIsLlmSettingsOpen(true)}
         onResetToHome={() => {
           if (status === 'in_progress') {
             if (confirm('Apakah Anda yakin ingin membatalkan sesi interview yang sedang berjalan?')) {
@@ -128,6 +157,8 @@ export default function Home() {
         {status === 'in_progress' && profile && (
           <InterviewRoom
             profile={profile}
+            groqApiKey={groqApiKey}
+            groqModel={groqModel}
             onFinishInterview={handleFinishInterview}
           />
         )}
@@ -173,6 +204,15 @@ export default function Home() {
         isOpen={isPaywallOpen}
         onClose={() => setIsPaywallOpen(false)}
         onSuccessUpgrade={handleSuccessUpgrade}
+      />
+
+      {/* Open-Source LLM Settings Modal */}
+      <LlmSettingsModal
+        isOpen={isLlmSettingsOpen}
+        onClose={() => setIsLlmSettingsOpen(false)}
+        onSave={handleSaveLlmSettings}
+        currentApiKey={groqApiKey}
+        currentModel={groqModel}
       />
     </div>
   );

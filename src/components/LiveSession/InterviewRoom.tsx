@@ -23,11 +23,15 @@ import { AudioHardwareManager } from '@/lib/audio/webAudio';
 
 interface InterviewRoomProps {
   profile: CandidateProfile;
+  groqApiKey?: string;
+  groqModel?: string;
   onFinishInterview: (messages: ChatMessage[]) => void;
 }
 
 export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   profile,
+  groqApiKey,
+  groqModel,
   onFinishInterview,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -154,7 +158,12 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       const res = await fetch('/api/interview/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile, messages: currentHistory }),
+        body: JSON.stringify({ 
+          profile, 
+          messages: currentHistory,
+          groqApiKey,
+          groqModel
+        }),
       });
 
       const data = await res.json();

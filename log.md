@@ -105,3 +105,24 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
 - Menambahkan Git Remote Origin: `https://github.com/AdnanAnwarR/ai-interview.git`.
 - Mengatur upstream tracking branch ke `origin/main`.
 - Berhasil melakukan *initial push* seluruh fondasi proyek, dokumentasi PRD, fitur Pre-Interview, Live Session Audio Visualizer, STAR Scorecard, Paywall, dan riwayat progress ke GitHub.
+
+---
+
+## [2026-10-05 21:17] - Integrasi Open-Source LLM (Groq LLaMA 3.3 70B) & Solusi Bug Pengulangan Pertanyaan
+
+### Masalah yang Ditemukan (User Feedback):
+1. **Pengulangan Pertanyaan & Respons Template:** Karena belum ada API key, sistem masuk ke *hardcoded fallback* yang setelah giliran ke-3 terus mengulang pertanyaan: `"Bagus sekali penjelasannya... Adakah pertanyaan yang ingin Anda tanyakan kepada saya...?"`.
+2. **AI Tidak Nyambung dengan Respons Pengguna:** Jawaban seperti *"tidak ada"* atau kata kasar tidak direspon secara alami sesuai konteks percakapan manusiawi.
+
+### Solusi & Peningkatan yang Diimplementasikan:
+1. **Integrasi Open-Source LLM (Groq Cloud - LLaMA 3.3 70B / LLaMA 3.1 8B):**
+   - Menggunakan model open-source dari Meta (**LLaMA 3.3 70B Versatile**) yang di-host gratis dan ultra-cepat (&lt; 0.4 detik) melalui Groq.
+   - Membuat komponen antarmuka baru: [`src/components/Settings/LlmSettingsModal.tsx`](file:///C:/projek%20techno/projek/src/components/Settings/LlmSettingsModal.tsx) dengan tombol uji koneksi langsung (*Live Connection Ping*) dan panduan mendapatkan API key gratis dari `console.groq.com/keys`.
+   - Menambahkan tombol status LLM pada [`Navbar.tsx`](file:///C:/projek%20techno/projek/src/components/Navbar.tsx) (`LLaMA 3.3 Aktif` / `Atur Open-Source LLM`).
+2. **Penyempurnaan Engine Cerdas Bawaan (Saat Tanpa API Key):**
+   - **Deteksi Kata Kasar / Profanity:** AI (Sarah / Alex) menegur secara tegas dan profesional jika kandidat menggunakan bahasa kasar/tidak pantas, serta menanyakan keseriusan kandidat untuk melanjutkan secara profesional.
+   - **Deteksi Jawaban Singkat / "Tidak Ada":** Jika kandidat menjawab *"tidak ada"* pada pertanyaan penutup, AI menyimpulkan bahwa seluruh pertanyaan sudah selesai dan langsung mengarahkan ke laporan evaluasi akhir (tidak mengulang pertanyaan lagi).
+   - **Deteksi Pertanyaan Balik dari Kandidat:** Jika kandidat bertanya seputar budaya kerja, teknologi/tech stack, atau ekspektasi gaji, AI menjawab pertanyaan tersebut secara realistis terlebih dahulu sebelum beralih ke giliran berikutnya.
+   - **Multi-Turn Queue Bebas Duplikasi:** Pertanyaan tersusun dalam antrean tematik berjenjang (perkenalan, konflik tim/arsitektur, kegagalan/trade-off, prioritas kerja, visi karier, penutup) sehingga tidak pernah mengulang pertanyaan yang sama.
+3. **Peningkatan Evaluasi Scorecard (`/api/interview/evaluate`):**
+   - Jika terdeteksi kata-kata kasar dalam transkrip percakapan, sistem secara otomatis memberikan penalti skor komunikasi, saran etika kerja, dan status kelulusan *Not Ready*.

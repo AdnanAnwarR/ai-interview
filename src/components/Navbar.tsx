@@ -1,21 +1,25 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, Mic, Volume2, CreditCard } from 'lucide-react';
+import { Sparkles, Mic, Volume2, CreditCard, Settings, Cpu } from 'lucide-react';
 import { InterviewStatus, UserSubscription } from '@/types/interview';
 
 interface NavbarProps {
   status: InterviewStatus;
   subscription: UserSubscription;
   onOpenPricing: () => void;
+  onOpenSettings: () => void;
   onResetToHome: () => void;
+  hasGroqKey: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   status,
   subscription,
   onOpenPricing,
+  onOpenSettings,
   onResetToHome,
+  hasGroqKey,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
@@ -42,7 +46,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         {/* Right side info & actions */}
-        <div className="flex items-center space-x-3 sm:space-x-4">
+        <div className="flex items-center space-x-2 sm:space-x-3">
           {/* Active status indicator */}
           {status === 'in_progress' && (
             <div className="hidden sm:flex items-center space-x-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium animate-pulse">
@@ -50,6 +54,28 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Sesi Live Berjalan</span>
             </div>
           )}
+
+          {/* LLM Engine Status Button */}
+          <button
+            onClick={onOpenSettings}
+            className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${
+              hasGroqKey
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-indigo-500/50'
+            }`}
+          >
+            <Cpu className={`w-3.5 h-3.5 ${hasGroqKey ? 'text-emerald-400' : 'text-indigo-400'}`} />
+            <span>{hasGroqKey ? 'LLaMA 3.3 Aktif' : 'Atur Open-Source LLM'}</span>
+          </button>
+
+          {/* Settings Icon Button for mobile */}
+          <button
+            onClick={onOpenSettings}
+            className="sm:hidden p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+            title="Pengaturan LLM"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
 
           {/* Quota Badge */}
           <button
