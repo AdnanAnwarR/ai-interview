@@ -35,3 +35,43 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
 ### 6. Komponen Antarmuka Pengguna (UI)
 - `src/components/Navbar.tsx`: Header dengan indikator sesi live, status audio, dan kuota 15 menit gratis.
 - `src/components/PreInterview/AudioHardwareModal.tsx`: Pengujian mic visualizer dan pemutar nada speaker sebelum wawancara dimulai (PRD F-103).
+
+---
+
+## [2026-10-05 20:56] - Implementasi Lengkap Phase 1, Phase 2, & Phase 3 (End-to-End Flow)
+
+### 1. Phase 1: Pre-Interview UI (`src/components/PreInterview/`)
+- `SetupForm.tsx`:
+  - Form input Profil Kandidat, Posisi Target, dan Pengalaman (`fresh_graduate`, `mid_level`, `senior`).
+  - Pemilihan Mode Wawancara: **HRD (Behavioral / STAR)** vs **Technical (Lead / Hard skill)**.
+  - Form Job Description (wajib) & Input Ringkasan / Unggah File CV (PDF/DOCX/TXT).
+  - Quick presets: 1-click template untuk Frontend Developer (Next.js), Backend Engineer (Go/Node.js), dan HR Associate Fresh Graduate.
+
+### 2. Phase 2: Live Interview Session Room (`src/components/LiveSession/`)
+- `AudioVisualizer.tsx`:
+  - Visualisasi gelombang audio dinamis bereaksi secara real-time saat AI berbicara (ungu/indigo) dan kandidat berbicara (hijau/cyan).
+- `LiveCountdownTimer.tsx`:
+  - Countdown timer 15:00 menit (PRD F-202).
+  - Peringatan audio & visual saat sisa waktu < 2 menit (PRD F-204).
+  - Terminasi otomatis sesi tepat di 00:00 (PRD F-205).
+- `InterviewRoom.tsx`:
+  - Percakapan suara real-time dua arah (STT & TTS dengan bahasa Indonesia).
+  - Visualizer live, kontrol mute mikrofon, dan fallback text chat jika kandidat berada di tempat bising.
+  - Auto-scroll transkrip percakapan langsung.
+  - Tombol penghentian manual sesi kapan saja.
+
+### 3. Phase 3: Post-Interview Scorecard & Monetisasi (`src/components/PostInterview/`, `src/components/Monetization/`)
+- `ScorecardView.tsx`:
+  - Tampilan Scorecard otomatis (1–100) dilengkapi perayaan konfeti jika lulus.
+  - 4 pilar rincian nilai: *Structure (STAR)*, *Relevance*, *Communication*, dan *Domain Expertise*.
+  - Evaluasi mendalam kerangka STAR (Situation, Task, Action, Result) per jawaban kandidat.
+  - Poin kekuatan utama (*Key Strengths*) dan saran perbaikan konkret (*Improvement Tips*).
+  - Accordion riwayat transkrip lengkap percakapan dan tombol salin hasil evaluasi ke clipboard.
+- `PaywallModal.tsx`:
+  - Mengunci akses latihan baru jika kuota sesi gratis 15 menit telah habis (PRD F-303).
+  - Pilihan paket fleksibel (1 Sesi, 5 Sesi Siap Kerja, dan Unlimited 30 Hari).
+  - Simulasi pembayaran QRIS (visual barcode NMID), E-Wallet (GoPay/OVO), dan Virtual Account dengan top-up kuota instan (PRD F-304).
+
+### 4. Integrasi Halaman Utama (`src/app/page.tsx`)
+- State machine siklus wawancara: `idle` -> `testing_hardware` -> `in_progress` -> `evaluating` -> `completed` -> `paywall`.
+- Pengujian build produksi (`npm run build`) berhasil 100% tanpa error via Next.js Turbopack.

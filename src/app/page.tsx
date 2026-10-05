@@ -1,69 +1,179 @@
-import Image from "next/image";
+'use client';
+
+import React, { useState } from 'react';
+import { Navbar } from '@/components/Navbar';
+import { SetupForm } from '@/components/PreInterview/SetupForm';
+import { AudioHardwareModal } from '@/components/PreInterview/AudioHardwareModal';
+import { InterviewRoom } from '@/components/LiveSession/InterviewRoom';
+import { ScorecardView } from '@/components/PostInterview/ScorecardView';
+import { PaywallModal } from '@/components/Monetization/PaywallModal';
+import { 
+  CandidateProfile, 
+  ChatMessage, 
+  InterviewStatus, 
+  ScorecardReport, 
+  UserSubscription 
+} from '@/types/interview';
+import { Loader2, Sparkles } from 'lucide-react';
 
 export default function Home() {
+  const [status, setStatus] = useState<InterviewStatus>('idle');
+  const [profile, setProfile] = useState<CandidateProfile | null>(null);
+  const [transcript, setTranscript] = useState<ChatMessage[]>([]);
+  const [scorecardReport, setScorecardReport] = useState<ScorecardReport | null>(null);
+  const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
+  const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+
+  const [subscription, setSubscription] = useState<UserSubscription>({
+    plan: 'free',
+    freeSessionUsed: false,
+    sessionsRemaining: 1,
+  });
+
+  // Step 1: Pre-Interview form submitted -> open Audio Hardware Test
+  const handleStartHardwareTest = (candidateData: CandidateProfile) => {
+    // If free session already used and no paid sessions left -> show paywall
+    if (subscription.freeSessionUsed && subscription.sessionsRemaining <= 0) {
+      setIsPaywallOpen(true);
+      return;
+    }
+
+    setProfile(candidateData);
+    setIsAudioModalOpen(true);
+  };
+
+  // Step 2: Audio hardware verified -> Start Live Interview
+  const handleStartInterview = () => {
+    setIsAudioModalOpen(false);
+    setStatus('in_progress');
+  };
+
+  // Step 3: Interview completed (timer expired or manual end) -> evaluate
+  const handleFinishInterview = async (finalMessages: ChatMessage[]) => {
+    setTranscript(finalMessages);
+    setStatus('evaluating');
+
+    try {
+      const res = await fetch('/api/interview/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile,
+          messages: finalMessages,
+        }),
+      });
+
+      const report: ScorecardReport = await res.json();
+      setScorecardReport(report);
+      setStatus('completed');
+
+      // Deduct quota
+      setSubscription((prev) => ({
+        ...prev,
+        freeSessionUsed: true,
+        sessionsRemaining: Math.max(0, prev.sessionsRemaining - 1),
+      }));
+    } catch (err) {
+      console.error('Failed to generate scorecard:', err);
+      setStatus('completed');
+    }
+  };
+
+  // Step 4: Start new session
+  const handleStartNewSession = () => {
+    if (subscription.freeSessionUsed && subscription.sessionsRemaining <= 0) {
+      setIsPaywallOpen(true);
+    } else {
+      setStatus('idle');
+      setScorecardReport(null);
+      setTranscript([]);
+    }
+  };
+
+  // Upgrade handler
+  const handleSuccessUpgrade = (plan: 'free' | 'pro' | 'unlimited', sessionsAdded: number) => {
+    setSubscription({
+      plan,
+      freeSessionUsed: false,
+      sessionsRemaining: sessionsAdded,
+    });
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Persistent Navbar */}
+      <Navbar
+        status={status}
+        subscription={subscription}
+        onOpenPricing={() => setIsPaywallOpen(true)}
+        onResetToHome={() => {
+          if (status === 'in_progress') {
+            if (confirm('Apakah Anda yakin ingin membatalkan sesi interview yang sedang berjalan?')) {
+              setStatus('idle');
+            }
+          } else {
+            setStatus('idle');
+          }
+        }}
+      />
+
+      {/* Main Container */}
+      <main className="flex-1">
+        {/* State 1: Setup Form (Pre-Interview) */}
+        {status === 'idle' && (
+          <SetupForm onStartHardwareTest={handleStartHardwareTest} />
+        )}
+
+        {/* State 2: Live Interview Room */}
+        {status === 'in_progress' && profile && (
+          <InterviewRoom
+            profile={profile}
+            onFinishInterview={handleFinishInterview}
+          />
+        )}
+
+        {/* State 3: Evaluating Loader */}
+        {status === 'evaluating' && (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
+            <div className="relative mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+              </div>
+              <Sparkles className="w-5 h-5 text-amber-400 absolute -top-2 -right-2 animate-bounce" />
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2">
+              Menganalisis Hasil Wawancara Anda...
+            </h2>
+            <p className="text-xs text-slate-400 max-w-md">
+              Sistem AI sedang mengevaluasi struktur jawaban (STAR), relevansi terhadap Job Description, dan menyusun Scorecard komprehensif.
+            </p>
+          </div>
+        )}
+
+        {/* State 4: Scorecard & Report */}
+        {status === 'completed' && scorecardReport && profile && (
+          <ScorecardView
+            report={scorecardReport}
+            profile={profile}
+            transcript={transcript}
+            onStartNewSession={handleStartNewSession}
+          />
+        )}
       </main>
+
+      {/* Audio Hardware Modal (PRD F-103) */}
+      <AudioHardwareModal
+        isOpen={isAudioModalOpen}
+        onClose={() => setIsAudioModalOpen(false)}
+        onProceed={handleStartInterview}
+      />
+
+      {/* Paywall & Subscription Gate Modal (PRD F-303 & F-304) */}
+      <PaywallModal
+        isOpen={isPaywallOpen}
+        onClose={() => setIsPaywallOpen(false)}
+        onSuccessUpgrade={handleSuccessUpgrade}
+      />
     </div>
   );
 }
