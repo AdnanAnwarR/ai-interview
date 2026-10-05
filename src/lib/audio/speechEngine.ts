@@ -1,9 +1,8 @@
 /**
  * Speech Engine: STT (Speech-to-Text) and TTS (Text-to-Speech)
- * Uses Web Speech API with fallback resilience and Indonesian/English language support.
+ * Resilient Web Speech API implementation with auto-restart, pause detection, and language support.
  */
 
-// Define SpeechRecognition interface for browsers
 interface SpeechRecognitionEventLike extends Event {
   resultIndex: number;
   results: {
@@ -33,8 +32,14 @@ interface SpeechRecognitionLike extends EventTarget {
 export class SpeechEngine {
   private recognition: SpeechRecognitionLike | null = null;
   private isListening = false;
+  private shouldBeListening = false;
   private synth: SpeechSynthesis | null = null;
   private indonesianVoice: SpeechSynthesisVoice | null = null;
+
+  private onInterimCallback: ((text: string) => void) | null = null;
+  private onFinalCallback: ((text: string) => void) | null = null;
+  private onErrorCallback: ((error: string) => void) | null = null;
+  private onStatusCallback: ((active: boolean) => void) | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -48,7 +53,6 @@ export class SpeechEngine {
       this.synth = window.speechSynthesis;
       const loadVoices = () => {
         const voices = this.synth?.getVoices() || [];
-        // Look for Indonesian voice (id-ID), fallback to any standard voice
         this.indonesianVoice = 
           voices.find(v => v.lang.startsWith('id') || v.lang.includes('Indonesian')) ||
           voices.find(v => v.lang.startsWith('en')) || 
@@ -76,6 +80,61 @@ export class SpeechEngine {
       this.recognition.continuous = true;
       this.recognition.interimResults = true;
       this.recognition.lang = 'id-ID';
+
+      this.recognition.onstart = () => {
+        this.isListening = true;
+        this.onStatusCallback?.(true);
+      };
+
+      this.recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        let interim = '';
+        let final = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const item = event.results[i];
+          const transcript = item[0]?.transcript || '';
+          if (item.isFinal) {
+            final += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+
+        if (interim && this.onInterimCallback) {
+          this.onInterimCallback(interim);
+        }
+        if (final && this.onFinalCallback) {
+          this.onFinalCallback(final.trim());
+        }
+      };
+
+      this.recognition.onerror = (event: { error: string }) => {
+        // Silently handle normal pauses or no-speech events
+        if (event.error !== 'no-speech') {
+          console.warn('SpeechRecognition event error:', event.error);
+          this.onErrorCallback?.(event.error);
+        }
+        this.isListening = false;
+        this.onStatusCallback?.(false);
+      };
+
+      this.recognition.onend = () => {
+        this.isListening = false;
+        this.onStatusCallback?.(false);
+
+        // Auto-reconnect if it ended due to timeout while user should still be listening
+        if (this.shouldBeListening) {
+          try {
+            setTimeout(() => {
+              if (this.shouldBeListening && !this.isListening && this.recognition) {
+                this.recognition.start();
+              }
+            }, 250);
+          } catch (e) {
+            console.warn('Could not auto-restart recognition:', e);
+          }
+        }
+      };
     }
   }
 
@@ -86,10 +145,17 @@ export class SpeechEngine {
   startListening(
     onInterim: (text: string) => void,
     onFinal: (text: string) => void,
-    onError?: (error: string) => void
+    onError?: (error: string) => void,
+    onStatus?: (active: boolean) => void
   ) {
+    this.onInterimCallback = onInterim;
+    this.onFinalCallback = onFinal;
+    this.onErrorCallback = onError || null;
+    this.onStatusCallback = onStatus || null;
+    this.shouldBeListening = true;
+
     if (!this.recognition) {
-      onError?.('Speech recognition is not supported in this browser.');
+      this.onErrorCallback?.('Browser tidak mendukung Speech Recognition Web API (gunakan Google Chrome / Edge).');
       return;
     }
 
@@ -97,39 +163,16 @@ export class SpeechEngine {
       return;
     }
 
-    this.recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      let interim = '';
-      let final = '';
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          final += transcript;
-        } else {
-          interim += transcript;
-        }
-      }
-
-      if (interim) onInterim(interim);
-      if (final) onFinal(final.trim());
-    };
-
-    this.recognition.onerror = (event) => {
-      if (event.error !== 'no-speech') {
-        console.warn('Speech recognition error:', event.error);
-        onError?.(event.error);
-      }
-    };
-
     try {
       this.recognition.start();
-      this.isListening = true;
     } catch (e) {
-      console.warn('Recognition start exception:', e);
+      // If already started or transitioning, ignore
+      console.warn('Recognition start caught:', e);
     }
   }
 
   stopListening() {
+    this.shouldBeListening = false;
     if (this.recognition && this.isListening) {
       try {
         this.recognition.stop();
@@ -137,6 +180,7 @@ export class SpeechEngine {
         console.warn('Error stopping recognition:', e);
       }
       this.isListening = false;
+      this.onStatusCallback?.(false);
     }
   }
 
@@ -146,6 +190,9 @@ export class SpeechEngine {
     onEnd?: () => void
   ): Promise<void> {
     return new Promise((resolve) => {
+      // Temporarily pause speech recognition while AI speaks to prevent feedback loop
+      this.stopListening();
+
       if (!this.synth) {
         onStart?.();
         setTimeout(() => {
@@ -157,10 +204,14 @@ export class SpeechEngine {
 
       this.synth.cancel(); // Stop any previous speech
 
-      const utterance = new SpeechSynthesisUtterance(text);
+      // Clean markdown characters from text for TTS
+      const cleanText = text.replace(/[*_#`~]/g, '');
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
       if (this.indonesianVoice) {
         utterance.voice = this.indonesianVoice;
       }
+      utterance.lang = 'id-ID';
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
 

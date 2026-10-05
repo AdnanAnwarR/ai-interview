@@ -75,3 +75,25 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
 ### 4. Integrasi Halaman Utama (`src/app/page.tsx`)
 - State machine siklus wawancara: `idle` -> `testing_hardware` -> `in_progress` -> `evaluating` -> `completed` -> `paywall`.
 - Pengujian build produksi (`npm run build`) berhasil 100% tanpa error via Next.js Turbopack.
+
+---
+
+## [2026-10-05 21:03] - Perbaikan Deteksi Suara Real-Time (STT) & Pengiriman Otomatis Jawaban
+
+### Masalah yang Ditemukan:
+- Sesi Web Speech Recognition di browser Chromium/Edge sering mengalami `onend` (timeout senyap) setelah jeda diam beberapa detik, sehingga sistem mengira mikrofon masih aktif padahal proses perekam di browser sudah terhenti.
+- Suara yang terucap belum otomatis dikirim ke percakapan karena menunggu event `isFinal` yang kadang terpecah oleh jeda bicara pendek.
+- Visualizer belum membaca langsung gelombang fisik dari mikrofon saat sesi interview aktif.
+
+### Solusi & Peningkatan yang Diimplementasikan:
+1. **Ketahanan SpeechEngine (`src/lib/audio/speechEngine.ts`):**
+   - Menambahkan mekanisme auto-reconnect pada event `onend` saat user masih dalam status giliran bicara.
+   - Perbaikan handling state `isListening` agar tidak mengalami dead-lock.
+   - Sanitasi teks sebelum dikirim ke TTS (menghapus format markdown karakter yang tidak perlu dibaca).
+2. **Buffer Suara & Auto-Send Silence Timer (`src/components/LiveSession/InterviewRoom.tsx`):**
+   - Menambahkan buffer akumulasi ucapan secara langsung (`live spoken buffer`), sehingga kata-kata yang diucapkan kandidat langsung tampil di layar secara *real-time*.
+   - Deteksi jeda hening: Ketika kandidat selesai berbicara (jeda hening ~2 detik), countdown otomatis muncul di layar dan jawaban langsung terkirim ke AI tanpa harus mengetik manual.
+   - Tombol instan **"Selesai Bicara & Kirim Jawaban Sekarang"** agar kandidat dapat mengirimkan jawaban ucapan seketika tanpa harus menunggu hening.
+   - Integrasi level input fisik mikrofon (`Web Audio API`) di ruang interview agar gelombang visualizer langsung menari mengikuti suara asli pengguna.
+3. **Penyempurnaan Visualizer (`src/components/LiveSession/AudioVisualizer.tsx`):**
+   - Indikator bar gelombang suara membesar dan beranimasi sesuai desibel level mic kandidat secara *real-time*.
