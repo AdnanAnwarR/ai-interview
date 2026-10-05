@@ -97,3 +97,11 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
    - Integrasi level input fisik mikrofon (`Web Audio API`) di ruang interview agar gelombang visualizer langsung menari mengikuti suara asli pengguna.
 3. **Penyempurnaan Visualizer (`src/components/LiveSession/AudioVisualizer.tsx`):**
    - Indikator bar gelombang suara membesar dan beranimasi sesuai desibel level mic kandidat secara *real-time*.
+
+---
+
+## [2026-10-05 21:06] - Menghubungkan Repository Remote GitHub & Sinkronisasi Branch
+
+- Menambahkan Git Remote Origin: `https://github.com/AdnanAnwarR/ai-interview.git`.
+- Mengatur upstream tracking branch ke `origin/main`.
+- Berhasil melakukan *initial push* seluruh fondasi proyek, dokumentasi PRD, fitur Pre-Interview, Live Session Audio Visualizer, STAR Scorecard, Paywall, dan riwayat progress ke GitHub.
