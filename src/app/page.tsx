@@ -25,6 +25,7 @@ export default function Home() {
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   // Open-Source LLM Settings (Groq / LLaMA 3.3)
   const [groqApiKey, setGroqApiKey] = useState('');
@@ -38,6 +39,7 @@ export default function Home() {
 
   // Load saved LLM settings from localStorage on client mount
   useEffect(() => {
+    setMounted(true);
     if (typeof window !== 'undefined') {
       const savedKey = localStorage.getItem('groq_api_key');
       const savedModel = localStorage.getItem('groq_model');
@@ -132,7 +134,7 @@ export default function Home() {
       <Navbar
         status={status}
         subscription={subscription}
-        hasGroqKey={!!groqApiKey}
+        hasGroqKey={mounted ? !!groqApiKey : false}
         onOpenPricing={() => setIsPaywallOpen(true)}
         onOpenSettings={() => setIsLlmSettingsOpen(true)}
         onResetToHome={() => {

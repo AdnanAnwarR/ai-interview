@@ -126,3 +126,17 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
    - **Multi-Turn Queue Bebas Duplikasi:** Pertanyaan tersusun dalam antrean tematik berjenjang (perkenalan, konflik tim/arsitektur, kegagalan/trade-off, prioritas kerja, visi karier, penutup) sehingga tidak pernah mengulang pertanyaan yang sama.
 3. **Peningkatan Evaluasi Scorecard (`/api/interview/evaluate`):**
    - Jika terdeteksi kata-kata kasar dalam transkrip percakapan, sistem secara otomatis memberikan penalti skor komunikasi, saran etika kerja, dan status kelulusan *Not Ready*.
+
+---
+
+## [2026-10-05 21:19] - Perbaikan React SSR Hydration Mismatch
+
+### Masalah yang Ditemukan:
+- Muncul peringatan di console browser:
+  `A tree hydrated but some attributes of the server rendered HTML didn't match the client properties.`
+  Hal ini disebabkan oleh pengecekan nilai state client (`localStorage` untuk Groq API Key dan badge di Navbar) yang berbeda antara saat server me-render HTML awal dan saat client me-mount komponen, serta ekstensi browser yang menyuntikkan atribut ke tag `<html>` / `<body>`.
+
+### Solusi yang Diimplementasikan:
+1. Menambahkan atribut `suppressHydrationWarning` pada tag `<html>` dan `<body>` di [`src/app/layout.tsx`](file:///C:/projek%20techno/projek/src/app/layout.tsx).
+2. Menambahkan state `mounted` di [`src/app/page.tsx`](file:///C:/projek%20techno/projek/src/app/page.tsx) untuk memastikan badge Navbar dan pembacaan `localStorage` hanya diaktifkan setelah komponen selesai di-mount pada sisi client (`mounted ? !!groqApiKey : false`), sehingga struktur HTML server dan client 100% identik saat hydration.
+3. Memperbarui metadata judul aplikasi di `layout.tsx` menjadi *"Real-Time AI Interview Simulator"*.
