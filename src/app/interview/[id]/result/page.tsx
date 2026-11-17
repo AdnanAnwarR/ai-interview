@@ -6,24 +6,69 @@ import { AppHeader } from '@/components/shared/AppHeader';
 import { ScoreCard } from '@/components/result/ScoreCard';
 import { RadarChart } from '@/components/result/RadarChart';
 import { AnswerFeedbackCard } from '@/components/result/AnswerFeedbackCard';
-import { InterviewResult, InterviewConfig } from '@/types/wawancara';
+import { InterviewConfig, AnswerEvaluation } from '@/types/wawancara';
 import { 
   Loader2, 
   RefreshCw, 
   Download, 
   ArrowLeft, 
   Sparkles, 
-  AlertCircle,
-  Share2
+  AlertCircle
 } from 'lucide-react';
 import Link from 'next/link';
+
+interface RawEvaluationResult {
+  overall?: {
+    score: number;
+    level: string;
+    summary: string;
+    top_strengths: string[];
+    top_improvements: string[];
+  };
+  rubric?: {
+    relevansi: number;
+    struktur_star: number;
+    kejelasan: number;
+    kepercayaan_diri: number;
+    contoh_nyata: number;
+  };
+  totalScore?: number;
+  summary?: string;
+  topStrengths?: string[];
+  topImprovements?: string[];
+  radarRubric?: {
+    relevansi: number;
+    strukturSTAR: number;
+    kejelasan: number;
+    kepercayaanDiri: number;
+    contohNyata: number;
+  };
+  companyName?: string;
+  targetRole?: string;
+  date?: string;
+  answers: Array<{
+    question_index?: number;
+    questionIndex?: number;
+    question?: string;
+    questionText?: string;
+    answer?: string;
+    userAnswer?: string;
+    score: number;
+    strengths: string[] | string;
+    improvements: string[] | string;
+    star?: { situation: boolean; task: boolean; action: boolean; result: boolean };
+    starCriteria?: { situation: boolean; task: boolean; action: boolean; result: boolean };
+    better_answer_example?: string;
+    betterAnswerExample?: string;
+  }>;
+}
 
 export default function InterviewResultPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
 
-  const [result, setResult] = useState<InterviewResult | null>(null);
+  const [rawResult, setRawResult] = useState<RawEvaluationResult | null>(null);
   const [config, setConfig] = useState<InterviewConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,8 +83,8 @@ export default function InterviewResultPage() {
         }
         return res.json();
       })
-      .then((data: { result: InterviewResult; config: InterviewConfig }) => {
-        setResult(data.result);
+      .then((data: { result: RawEvaluationResult; config: InterviewConfig }) => {
+        setRawResult(data.result);
         setConfig(data.config);
         setLoading(false);
       })
@@ -50,7 +95,6 @@ export default function InterviewResultPage() {
       });
   }, [id]);
 
-  // Fungsi Unduh Hasil PDF via browser print terformat
   const handleDownloadPdf = () => {
     window.print();
   };
@@ -67,7 +111,7 @@ export default function InterviewResultPage() {
     );
   }
 
-  if (error || !result) {
+  if (error || !rawResult) {
     return (
       <div className="min-h-screen bg-[#EAF2FE] text-[#1B2A41] flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 text-center shadow-lg">
@@ -88,6 +132,39 @@ export default function InterviewResultPage() {
     );
   }
 
+  // Normalisasi data dari schema baru ({ overall, rubric, answers })
+  const totalScore = rawResult.overall?.score ?? rawResult.totalScore ?? 85;
+  const summary = rawResult.overall?.summary ?? rawResult.summary ?? 'Evaluasi performa wawancara Anda.';
+  const topStrengths = rawResult.overall?.top_strengths ?? rawResult.topStrengths ?? [];
+  const topImprovements = rawResult.overall?.top_improvements ?? rawResult.topImprovements ?? [];
+
+  const radarRubric = {
+    relevansi: rawResult.rubric?.relevansi ?? rawResult.radarRubric?.relevansi ?? 80,
+    strukturSTAR: rawResult.rubric?.struktur_star ?? rawResult.radarRubric?.strukturSTAR ?? 80,
+    kejelasan: rawResult.rubric?.kejelasan ?? rawResult.radarRubric?.kejelasan ?? 80,
+    kepercayaanDiri: rawResult.rubric?.kepercayaan_diri ?? rawResult.radarRubric?.kepercayaanDiri ?? 80,
+    contohNyata: rawResult.rubric?.contoh_nyata ?? rawResult.radarRubric?.contohNyata ?? 80,
+  };
+
+  const answers: AnswerEvaluation[] = (rawResult.answers || []).map((ans, idx) => ({
+    questionIndex: ans.question_index ?? ans.questionIndex ?? idx + 1,
+    questionText: ans.question ?? ans.questionText ?? `Pertanyaan ke-${idx + 1}`,
+    userAnswer: ans.answer ?? ans.userAnswer ?? '',
+    score: ans.score ?? 80,
+    strengths: Array.isArray(ans.strengths) ? ans.strengths.join('. ') : ans.strengths || '',
+    improvements: Array.isArray(ans.improvements) ? ans.improvements.join('. ') : ans.improvements || '',
+    starCriteria: ans.star ?? ans.starCriteria ?? { situation: true, task: true, action: true, result: true },
+    betterAnswerExample: ans.better_answer_example ?? ans.betterAnswerExample ?? '',
+  }));
+
+  const companyName = config?.companyName || rawResult.companyName || 'Perusahaan Target';
+  const targetRole = config?.targetRole || rawResult.targetRole || 'Posisi Terkait';
+  const displayDate = rawResult.date || new Date().toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
   return (
     <div className="min-h-screen flex flex-col bg-[#EAF2FE] text-[#1B2A41]">
       <div className="print:hidden">
@@ -95,7 +172,7 @@ export default function InterviewResultPage() {
       </div>
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8 space-y-8">
-        {/* Tombol Aksi Atas: Latihan Lagi & Unduh PDF */}
+        {/* Tombol Aksi Atas */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden">
           <Link
             href="/dashboard"
@@ -128,17 +205,17 @@ export default function InterviewResultPage() {
 
         {/* 1. ScoreCard: Nilai Total, Ringkasan, 3 Kekuatan, 3 Saran */}
         <ScoreCard
-          totalScore={result.totalScore}
-          summary={result.summary}
-          topStrengths={result.topStrengths}
-          topImprovements={result.topImprovements}
-          companyName={result.companyName}
-          targetRole={result.targetRole}
-          date={result.date}
+          totalScore={totalScore}
+          summary={summary}
+          topStrengths={topStrengths}
+          topImprovements={topImprovements}
+          companyName={companyName}
+          targetRole={targetRole}
+          date={displayDate}
         />
 
         {/* 2. RadarChart: Grafik Radar 5 Rubrik Kompetensi */}
-        <RadarChart rubric={result.radarRubric} />
+        <RadarChart rubric={radarRubric} />
 
         {/* 3. Daftar Kartu Nilai Per Jawaban */}
         <div className="space-y-4">
@@ -153,12 +230,12 @@ export default function InterviewResultPage() {
               </p>
             </div>
             <span className="text-xs font-bold text-[#2F67BB] px-3 py-1 rounded-full bg-white border border-[#2F67BB]/20">
-              {result.answers.length} Pertanyaan Dievaluasi
+              {answers.length} Pertanyaan Dievaluasi
             </span>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            {result.answers.map((answer) => (
+            {answers.map((answer) => (
               <AnswerFeedbackCard key={answer.questionIndex} answer={answer} />
             ))}
           </div>

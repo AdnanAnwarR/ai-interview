@@ -66,10 +66,9 @@ export async function POST(
     // Kirim seluruh transkrip ke Claude untuk dinilai dengan validasi Zod
     const evaluationData = await evaluateInterview(
       {
-        company: session.company,
-        position: session.position,
+        perusahaan: session.company,
+        posisi: session.position,
         level: session.level,
-        style: session.style,
       },
       session.messages.map((m) => ({
         role: m.role as 'user' | 'assistant',
@@ -82,7 +81,7 @@ export async function POST(
     const savedEvaluation = await db.evaluation.create({
       data: {
         sessionId: id,
-        overallScore: evaluationData.overallScore,
+        overallScore: evaluationData.overall.score,
         json: evaluationData as unknown as Prisma.InputJsonValue,
       },
     });

@@ -36,10 +36,9 @@ export async function GET(
         if (!evaluationData) {
           const evalResult = await evaluateInterview(
             {
-              company: dbSession.company,
-              position: dbSession.position,
+              perusahaan: dbSession.company,
+              posisi: dbSession.position,
               level: dbSession.level,
-              style: dbSession.style,
             },
             dbSession.messages.map((m) => ({
               role: m.role as 'user' | 'assistant',
@@ -51,7 +50,7 @@ export async function GET(
           const savedEval = await db.evaluation.create({
             data: {
               sessionId: dbSession.id,
-              overallScore: evalResult.overallScore,
+              overallScore: evalResult.overall.score,
               json: evalResult as unknown as Prisma.InputJsonValue,
             },
           });

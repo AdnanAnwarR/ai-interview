@@ -135,11 +135,12 @@ export async function POST(
     });
 
     const systemPrompt = buildInterviewerSystemPrompt({
-      company: session.company,
-      position: session.position,
+      perusahaan: session.company,
+      posisi: session.position,
       level: session.level,
-      style: session.style,
-      totalQuestions: session.totalQuestions,
+      gaya: session.style,
+      total_pertanyaan: session.totalQuestions,
+      nomor_sekarang: currentQuestionIndex,
     });
 
     // Panggil Claude dengan streaming

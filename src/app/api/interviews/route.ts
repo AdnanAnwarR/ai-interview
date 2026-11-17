@@ -123,11 +123,12 @@ export async function POST(req: NextRequest) {
     // Minta pesan pembuka dari Claude untuk sesi baru
     let openingGreeting = '';
     const systemPrompt = buildInterviewerSystemPrompt({
-      company,
-      position,
+      perusahaan: company,
+      posisi: position,
       level,
-      style,
-      totalQuestions,
+      gaya: style,
+      total_pertanyaan: totalQuestions,
+      nomor_sekarang: 1,
     });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -143,7 +144,7 @@ export async function POST(req: NextRequest) {
           messages: [
             {
               role: 'user',
-              content: `Mulai sesi wawancara sekarang. Sapa saya dengan sopan, perkenalkan nama Anda dan peran di ${company}, lalu ajukan pertanyaan pembuka pertama untuk posisi ${position}.`,
+              content: 'Mulai wawancara sekarang. Buka dengan sapaan dan minta aku memperkenalkan diri.',
             },
           ],
         });
