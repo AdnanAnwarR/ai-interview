@@ -1,5 +1,5 @@
 // Konfigurasi Paket & Harga Wawancarain
-// Simpan di satu file konfigurasi agar mudah diubah sewaktu-waktu
+// Simpan di satu file konfigurasi terpusat agar mudah diubah sewaktu-waktu
 
 export interface PricingPlan {
   id: string;
@@ -8,7 +8,9 @@ export interface PricingPlan {
   price: number;
   formattedPrice: string;
   periodText?: string;
-  sessions: number;
+  type: 'credits' | 'subscription';
+  sessions?: number;
+  subscriptionDays?: number;
   isPopular?: boolean;
   badge?: string;
   features: string[];
@@ -27,6 +29,7 @@ export const PRICING_CONFIG: {
       price: 5000,
       formattedPrice: 'Rp 5.000',
       periodText: 'sekali bayar',
+      type: 'credits',
       sessions: 1,
       isPopular: false,
       badge: 'Starter',
@@ -46,6 +49,7 @@ export const PRICING_CONFIG: {
       price: 20000,
       formattedPrice: 'Rp 20.000',
       periodText: 'sekali bayar (Rp 4.000 / sesi)',
+      type: 'credits',
       sessions: 5,
       isPopular: true,
       badge: 'Paling Populer',
@@ -66,7 +70,8 @@ export const PRICING_CONFIG: {
       price: 25000,
       formattedPrice: 'Rp 25.000',
       periodText: 'per bulan (bebas latihan)',
-      sessions: 9999,
+      type: 'subscription',
+      subscriptionDays: 30,
       isPopular: false,
       badge: 'Super Hemat',
       features: [
@@ -80,3 +85,7 @@ export const PRICING_CONFIG: {
     },
   ],
 };
+
+export function getPackageById(packageId: string): PricingPlan | undefined {
+  return PRICING_CONFIG.plans.find((p) => p.id === packageId);
+}

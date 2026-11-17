@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     const orderId = `WAWANCARAIN-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
     // Top up saldo sesi ke store secara otomatis
-    interviewStore.topUpSession(plan.sessions, plan.id === 'unlimited_monthly' ? 'unlimited' : 'pro');
+    interviewStore.topUpSession(plan.sessions || 1, plan.id === 'unlimited_monthly' ? 'unlimited' : 'pro');
 
     // Jika Midtrans Server Key asli terisi di environment variable
     if (process.env.MIDTRANS_SERVER_KEY && !process.env.MIDTRANS_SERVER_KEY.includes('placeholder')) {
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
           grossAmount: plan.price,
           customerName,
           customerEmail,
-          tierName: plan.name,
+          packageName: plan.name,
         });
 
         return NextResponse.json({
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
           token: snapResult.token,
           redirectUrl: snapResult.redirectUrl,
           amount: plan.price,
-          sessionsAdded: plan.sessions,
+          sessionsAdded: plan.sessions || 1,
         });
       } catch (err) {
         console.warn('Midtrans Snap call failed, falling back to simulated checkout:', err);

@@ -1,4 +1,4 @@
-// Midtrans Snap Client Integration for "Wawancarain"
+import crypto from 'crypto';
 // @ts-expect-error midtrans-client lacks TypeScript type declarations
 import midtransClient from 'midtrans-client';
 
@@ -7,7 +7,7 @@ export interface CreateSnapTransactionParams {
   grossAmount: number;
   customerName: string;
   customerEmail: string;
-  tierName: string;
+  packageName: string;
 }
 
 export interface SnapTransactionResult {
@@ -17,12 +17,12 @@ export interface SnapTransactionResult {
 
 /**
  * Mendapatkan instance Midtrans Snap Client
- * Menggunakan Server Key dari environment variable
+ * Menggunakan Server Key dan parameter isProduction
  */
 export function getMidtransSnapClient() {
   const serverKey = process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-placeholder';
-  const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || 'SB-Mid-client-placeholder';
-  const isProduction = process.env.NODE_ENV === 'production' && process.env.MIDTRANS_IS_PRODUCTION === 'true';
+  const clientKey = process.env.MIDTRANS_CLIENT_KEY || process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || 'SB-Mid-client-placeholder';
+  const isProduction = process.env.MIDTRANS_IS_PRODUCTION === 'true';
 
   return new midtransClient.Snap({
     isProduction,
@@ -49,7 +49,7 @@ export async function createMidtransTransaction(
         id: params.orderId,
         price: params.grossAmount,
         quantity: 1,
-        name: params.tierName,
+        name: params.packageName,
       },
     ],
     customer_details: {
@@ -58,9 +58,6 @@ export async function createMidtransTransaction(
     },
     credit_card: {
       secure: true,
-    },
-    callbacks: {
-      finish: typeof window !== 'undefined' ? `${window.location.origin}?payment=finish` : undefined,
     },
   };
 
@@ -74,4 +71,23 @@ export async function createMidtransTransaction(
     console.error('Gagal membuat transaksi Midtrans Snap:', error);
     throw error;
   }
+}
+
+/**
+ * Verifikasi signature_key webhook Midtrans
+ * signature_key = SHA512(order_id + status_code + gross_amount + ServerKey)
+ */
+export function verifyMidtransSignature(
+  orderId: string,
+  statusCode: string,
+  grossAmount: string,
+  providedSignature: string
+): boolean {
+  const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
+  if (!serverKey) return false;
+
+  const raw = `${orderId}${statusCode}${grossAmount}${serverKey}`;
+  const computedSignature = crypto.createHash('sha512').update(raw).digest('hex');
+
+  return computedSignature === providedSignature;
 }

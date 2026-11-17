@@ -10,43 +10,57 @@ datasource db {
   provider = "postgresql"
 }
 
-// User model for Auth.js and profile management
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  
-  // Quota & subscription
-  plan              String    @default("free") // "free", "pro", "unlimited"
-  sessionsRemaining Int       @default(1)
-  freeSessionUsed   Boolean   @default(false)
-  
-  accounts      Account[]
-  sessions      Session[]
-  interviews    Interview[]
-  transactions  PaymentTransaction[]
+enum InterviewStatus {
+  ACTIVE
+  FINISHED
+}
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+enum MessageRole {
+  user
+  assistant
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+}
+
+// User model for Auth.js and credit/subscription management
+model User {
+  id                String             @id @default(cuid())
+  email             String?            @unique
+  name              String?
+  image             String?
+  emailVerified     DateTime?
+  credits           Int                @default(1) // Sesi gratis awal = 1 per akun
+  subscriptionUntil DateTime?
+
+  accounts          Account[]
+  sessions          Session[]
+  interviewSessions InterviewSession[]
+  orders            Order[]
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 }
 
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String? @db.Text
-  access_token       String? @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String? @db.Text
-  session_state      String?
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -67,88 +81,67 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// Interview session record
-model Interview {
-  id                String    @id @default(cuid())
-  userId            String?
-  candidateName     String
-  targetCompany     String    // e.g. BCA, GoTo, Shopee, Telkom
-  targetRole        String    // e.g. Frontend Developer, ODP
-  experienceLevel   String    // "fresh_graduate", "mid_level", "senior"
-  mode              String    // "hrd" or "technical"
-  jobDescription    String    @db.Text
-  cvContent         String?   @db.Text
-  
-  // Overall results
-  overallScore      Int?      // 1 - 100
-  passed            Boolean?  // true / false
-  hiringRecommendation String? // "Strong Hire", "Hire", "Borderline", "Not Ready"
-  summaryFeedback   String?   @db.Text
-  scoreStructure    Int?
-  scoreRelevance    Int?
-  scoreCommunication Int?
-  scoreDomain       Int?
-  
-  status            String    @default("in_progress") // "in_progress", "completed", "aborted"
-  
-  user              User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  messages          InterviewMessage[]
-  answerScores      InterviewAnswerScore[]
+// Interview Session model
+model InterviewSession {
+  id             String          @id @default(cuid())
+  userId         String
+  company        String
+  position       String
+  level          String          // "magang" | "fresh_graduate" | "junior"
+  style          String          // "ramah" | "tegas" | "stress"
+  totalQuestions Int             @default(5)
+  status         InterviewStatus @default(ACTIVE)
+  startedAt      DateTime        @default(now())
+  endedAt        DateTime?
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages       Message[]
+  evaluation     Evaluation?
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([userId, status])
 }
 
-model InterviewMessage {
-  id          String    @id @default(cuid())
-  interviewId String
-  sender      String    // "ai" or "user"
-  text        String    @db.Text
-  timestamp   BigInt
-  durationSec Int?
+// Individual interview messages (conversational turns)
+model Message {
+  id            String           @id @default(cuid())
+  sessionId     String
+  role          MessageRole
+  content       String           @db.Text
+  questionIndex Int
+  createdAt     DateTime         @default(now())
 
-  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  session       InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime  @default(now())
+  @@index([sessionId, questionIndex])
 }
 
-// Per-answer scoring model: "di akhir mendapat nilai untuk setiap jawabannya"
-model InterviewAnswerScore {
-  id             String    @id @default(cuid())
-  interviewId    String
-  questionIndex  Int
-  questionText   String    @db.Text
-  answerText     String    @db.Text
-  score          Int       // 0 - 100
-  relevanceScore Int?
-  clarityScore   Int?
-  depthScore     Int?
-  feedback       String    @db.Text
-  strengths      String[]  // Array of strengths
-  improvements   String[]  // Array of improvements
-  starSituation  String?   @db.Text
-  starTask       String?   @db.Text
-  starAction     String?   @db.Text
-  starResult     String?   @db.Text
+// Final comprehensive scorecard and per-answer evaluations
+model Evaluation {
+  id           String           @id @default(cuid())
+  sessionId    String           @unique
+  overallScore Int
+  json         Json             // Stores full evaluation JSON (STAR analysis, per-answer feedback, radar rubric)
+  createdAt    DateTime         @default(now())
 
-  interview      Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
-
-  createdAt      DateTime  @default(now())
+  session      InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
-// Payment transaction through Midtrans Snap
-model PaymentTransaction {
-  id            String    @id @default(cuid())
-  userId        String?
-  orderId       String    @unique
-  tierId        String    // "single_session", "pro_pack", "unlimited_monthly"
-  amount        Int       // in IDR (e.g. 29000, 99000)
-  status        String    @default("pending") // "pending", "settlement", "expire", "cancel"
-  snapToken     String?   @db.Text
-  paymentType   String?   // "qris", "bank_transfer", "gopay", etc
-  
-  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+// Midtrans Snap Order model
+model Order {
+  id              String      @id // Unique order_id generated for Midtrans
+  userId          String
+  packageId       String
+  amount          Int
+  status          OrderStatus @default(PENDING)
+  snapToken       String?     @db.Text
+  midtransPayload Json?
+  createdAt       DateTime    @default(now())
+  paidAt          DateTime?
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
 }

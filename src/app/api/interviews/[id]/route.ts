@@ -1,56 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { interviewStore } from '@/lib/store/interviewStore';
+import { db } from '@/lib/db';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const session = interviewStore.getSession(id);
-
-  if (!session) {
-    return NextResponse.json({ error: 'Sesi wawancara tidak ditemukan' }, { status: 404 });
-  }
-
-  // Jika sesi baru dan belum ada pesan pembuka, buat pesan sambutan pertama
-  if (session.messages.length === 0) {
-    const { companyName, targetRole, level, interviewerStyle } = session.config;
-    let greeting = '';
-
-    const levelText = level === 'magang' ? 'posisi Magang' : level === 'fresh_graduate' ? 'posisi Fresh Graduate' : 'posisi Junior';
-
-    if (interviewerStyle === 'ramah') {
-      greeting = `Halo! Selamat datang di sesi wawancara untuk ${targetRole} (${levelText}) di ${companyName}. Saya Sarah dari tim rekrutmen. Senang sekali bisa berbincang dengan Anda hari ini. Untuk memulai, bisakah Anda menceritakan sedikit tentang diri Anda dan apa yang membuat Anda tertarik bergabung dengan ${companyName}?`;
-    } else if (interviewerStyle === 'tegas') {
-      greeting = `Selamat datang di seleksi wawancara ${companyName} untuk ${targetRole}. Saya pewawancara Anda hari ini. Langsung saja ke inti: perkenalkan diri Anda secara ringkas dan sebutkan kontribusi nyata apa yang siap Anda berikan untuk perusahaan ini.`;
-    } else {
-      // stress interview style
-      greeting = `Halo. Di ${companyName}, kami bekerja dengan ritme sangat cepat dan ekspektasi tinggi untuk ${targetRole}. Pelamar untuk posisi ini sangat banyak dan kompetitif. Coba jelaskan dalam waktu singkat, mengapa kami harus mempertimbangkan Anda dibanding kandidat lain yang mungkin punya pengalaman lebih banyak?`;
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'UNAUTHORIZED', message: 'Anda harus masuk terlebih dahulu.' },
+        { status: 401 }
+      );
     }
 
-    const openingMessage = {
-      id: 'msg-' + Date.now(),
-      sender: 'ai' as const,
-      text: greeting,
-      timestamp: Date.now(),
-      questionIndex: 1,
-    };
+    const { id } = await params;
 
-    session.messages.push(openingMessage);
-    session.status = 'in_progress';
-    interviewStore.updateSession(id, {
-      messages: session.messages,
-      status: 'in_progress',
+    const session = await db.interviewSession.findUnique({
+      where: { id },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' },
+        },
+        evaluation: true,
+      },
     });
-  }
 
-  return NextResponse.json({
-    id: session.id,
-    config: session.config,
-    status: session.status,
-    currentQuestionIndex: session.currentQuestionIndex,
-    totalQuestions: session.totalQuestions,
-    messages: session.messages,
-    createdAt: session.createdAt,
-  });
+    if (!session) {
+      return NextResponse.json(
+        { error: 'NOT_FOUND', message: 'Sesi wawancara tidak ditemukan.' },
+        { status: 404 }
+      );
+    }
+
+    // Pengecekan kepemilikan data yang ketat
+    if (session.userId !== user.id) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: 'Anda tidak memiliki hak akses ke sesi wawancara ini.' },
+        { status: 403 }
+      );
+    }
+
+    // Hitung index pertanyaan saat ini
+    const lastMessage = session.messages[session.messages.length - 1];
+    const currentQuestionIndex = lastMessage?.questionIndex || 1;
+
+    return NextResponse.json({
+      id: session.id,
+      company: session.company,
+      position: session.position,
+      level: session.level,
+      style: session.style,
+      totalQuestions: session.totalQuestions,
+      status: session.status,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      currentQuestionIndex,
+      messages: session.messages,
+      evaluation: session.evaluation
+        ? {
+            id: session.evaluation.id,
+            overallScore: session.evaluation.overallScore,
+            json: session.evaluation.json,
+            createdAt: session.evaluation.createdAt,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error('Error fetching interview detail:', error);
+    return NextResponse.json(
+      { error: 'INTERNAL_ERROR', message: 'Gagal mengambil detail wawancara.' },
+      { status: 500 }
+    );
+  }
 }

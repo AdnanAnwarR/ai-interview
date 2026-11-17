@@ -201,3 +201,64 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
 ### 4. Verifikasi Teknis & Build
 - TypeScript strict compilation (`npx tsc --noEmit`): 0 error.
 - Next.js Production Build (`npm run build`): Berhasil 100% memproduksi seluruh static & dynamic route.
+
+---
+
+## [2026-10-05 23:45] - Pembangunan Backend Lengkap Wawancarain (Route Handlers, Prisma, Claude API, Midtrans Webhook)
+
+### 1. Database & Skema Prisma (`prisma/schema.prisma`)
+- Model **User**: `id`, `email`, `name`, `image`, `credits` (default 1), `subscriptionUntil` (DateTime).
+- Model **InterviewSession**: `id`, `userId`, `company`, `position`, `level`, `style`, `totalQuestions`, `status` (`ACTIVE` | `FINISHED`), `startedAt`, `endedAt`.
+- Model **Message**: `id`, `sessionId`, `role` (`user` | `assistant`), `content`, `questionIndex`, `createdAt`.
+- Model **Evaluation**: `id`, `sessionId` (unik), `overallScore`, `json` (Json), `createdAt`.
+- Model **Order**: `id`, `userId`, `packageId`, `amount`, `status` (`PENDING` | `PAID` | `FAILED` | `EXPIRED`), `snapToken`, `midtransPayload`, `createdAt`, `paidAt`.
+- Prisma Driver Adapter PostgreSQL terintegrasi dengan `@prisma/adapter-pg` dan connection pool (`pg`).
+- Skrip seed otomatis di `prisma/seed.ts` untuk akun contoh dan transkrip wawancara.
+
+### 2. Autentikasi & Otorisasi (`src/lib/auth.ts`)
+- Integrasi NextAuth / Auth.js dengan Google Provider.
+- Helper `getCurrentUser()` yang secara ketat memverifikasi sesi login pengguna dan saldo sesi di database.
+- Setiap endpoint memvalidasi kepemilikan data (`session.userId === user.id` dan `order.userId === user.id`).
+
+### 3. Route Handlers Sesi Wawancara
+- **`POST /api/interviews`:**
+  - Validasi input dengan Zod (`company`, `position`, `level`, `style`, `totalQuestions`).
+  - Verifikasi sesi login dan saldo kredit / langganan aktif.
+  - Pembatasan maksimal 1 sesi `ACTIVE` per pengguna (durasi maks. 45 menit).
+  - Pengurangan kredit secara atomik dalam satu transaksi database (`db.$transaction`).
+  - Menerima sapaan pembuka dari Claude API dan menyimpannya sebagai pesan pertama.
+- **`POST /api/interviews/[id]/chat`:**
+  - Menerima jawaban pengguna (maks. 2.000 karakter) dan menyimpannya ke database.
+  - Menolak jika sesi bukan `ACTIVE`, durasi melebihi 45 menit, atau pertanyaan sudah selesai.
+  - Menyusun riwayat percakapan murni dari database (bukan dari klien).
+  - Memanggil Claude API dengan **streaming token-by-token** (`text/event-stream`).
+  - Menyimpan balasan AI ke database setelah stream selesai dan menghitung `questionIndex` di server.
+- **`POST /api/interviews/[id]/finish`:**
+  - Menandai status sesi `FINISHED` dan mencatat `endedAt`.
+  - Mengirimkan seluruh transkrip ke Claude untuk evaluasi STAR komprehensif.
+  - Validasi hasil JSON menggunakan Zod dengan mekanisme retry otomatis.
+  - **Idempoten**: Mengembalikan data evaluasi yang sudah ada jika sudah dinilai sebelumnya.
+- **`GET /api/interviews` & `GET /api/interviews/[id]`:**
+  - Riwayat dan detail sesi beserta transkrip pesan dan evaluasi akhir.
+
+### 4. Modul Claude AI (`src/lib/ai/claude.ts`)
+- Model konfigurasi via environment variable: `ANTHROPIC_MODEL_INTERVIEW` (`claude-haiku-5-5`) dan `ANTHROPIC_MODEL_EVALUATION` (`claude-sonnet-5-5`).
+- Fungsi terpisah: `buildInterviewerSystemPrompt()`, `buildEvaluatorPrompt()`, `streamInterviewerReply()`, dan `evaluateInterview()`.
+- Penilaian menggunakan Anthropic Tool Use (`submit_evaluation`) untuk menjamin output JSON terstruktur 100% valid.
+
+### 5. Modul Pembayaran Midtrans Snap
+- **`POST /api/payments/create`:**
+  - Menghitung harga di server dari `src/config/pricing.ts` (Rp5.000, Rp20.000, Rp25.000).
+  - Membuat Order `PENDING` dan token Midtrans Snap.
+- **`POST /api/payments/notification` (Webhook):**
+  - Verifikasi SHA512 signature key resmi Midtrans.
+  - Pemetaan status transaksi (`settlement`/`capture` -> `PAID`, `deny`/`expire`/`cancel` -> `FAILED`/`EXPIRED`).
+  - Menambah saldo atau memperpanjang langganan secara atomik dalam satu transaksi database dan idempoten.
+- **`GET /api/payments/[orderId]/status`:**
+  - Polling status order untuk pembaruan instan pada halaman frontend pricing.
+
+### 6. Keamanan, Rate Limiting, & Dokumentasi
+- Rate limiting per pengguna dan per IP pada `/chat` dan `/payments/create` (Upstash Redis + fallback in-memory).
+- File konfigurasi lengkap `.env.example`.
+- Dokumentasi lengkap pengujian lokal dan webhook sandbox di `README_BACKEND.md`.
+- Kompilasi TypeScript strict dan Next.js production build berhasil 100% tanpa error.
