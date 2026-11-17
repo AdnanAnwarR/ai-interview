@@ -27,9 +27,9 @@ export default function Home() {
   const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // Open-Source LLM Settings (Groq / LLaMA 3.3)
+  // Open-Source LLM Settings (Groq / Qwen / GPT-OSS)
   const [groqApiKey, setGroqApiKey] = useState('');
-  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
+  const [groqModel, setGroqModel] = useState('qwen/qwen3.8-27b');
 
   const [subscription, setSubscription] = useState<UserSubscription>({
     plan: 'free',

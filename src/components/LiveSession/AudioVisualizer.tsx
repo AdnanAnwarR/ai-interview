@@ -19,16 +19,14 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   const isCandidateActive = isCandidateSpeaking || candidateMicLevel > 8;
 
   return (
-    <div className="flex flex-col items-center justify-center p-6 sm:p-8 bg-slate-950/80 rounded-2xl border border-slate-800 shadow-inner relative overflow-hidden">
+    <div className="flex flex-col items-center justify-center p-6 sm:p-8 bg-white rounded-3xl border border-[#2F67BB]/15 shadow-sm relative overflow-hidden">
       {/* Ambient Radial Glow */}
       <div
         className={`absolute inset-0 transition-opacity duration-500 pointer-events-none ${
           isAiSpeaking
-            ? mode === 'hrd'
-              ? 'bg-indigo-600/15 opacity-100'
-              : 'bg-cyan-600/15 opacity-100'
+            ? 'bg-[#EAF2FE] opacity-90'
             : isCandidateActive
-            ? 'bg-emerald-600/15 opacity-100'
+            ? 'bg-emerald-50 opacity-90'
             : 'opacity-0'
         }`}
       />
@@ -36,18 +34,18 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       {/* Visualizer Status Header */}
       <div className="flex items-center space-x-2 mb-6 z-10">
         {isAiSpeaking ? (
-          <span className="flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 text-xs font-semibold animate-pulse">
-            <Volume2 className="w-3.5 h-3.5" />
-            <span>AI Sedang Berbicara...</span>
+          <span className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#EAF2FE] border border-[#4A8DF0]/40 text-[#2F67BB] text-xs font-bold animate-pulse shadow-sm">
+            <Volume2 className="w-3.5 h-3.5 text-[#2F67BB]" />
+            <span>Pewawancara AI Sedang Berbicara...</span>
           </span>
         ) : isCandidateActive ? (
-          <span className="flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-semibold animate-pulse">
-            <Mic className="w-3.5 h-3.5" />
+          <span className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold animate-pulse shadow-sm">
+            <Mic className="w-3.5 h-3.5 text-emerald-600" />
             <span>Suara Terdeteksi • Merekam Jawaban...</span>
           </span>
         ) : (
-          <span className="flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-300 text-xs font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <span className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-[#1B2A41] text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
             <span>Giliran Anda Bicara (Mikrofon Siap)</span>
           </span>
         )}
@@ -57,18 +55,17 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       <div className="flex items-center justify-center space-x-1.5 sm:space-x-2.5 h-24 sm:h-28 z-10 w-full max-w-md">
         {Array.from({ length: 24 }).map((_, i) => {
           let heightClass = 'h-3';
-          let bgClass = 'bg-slate-700';
+          let bgClass = 'bg-slate-300';
 
           if (isAiSpeaking) {
             bgClass =
               mode === 'hrd'
-                ? 'bg-gradient-to-t from-indigo-600 to-violet-400'
-                : 'bg-gradient-to-t from-cyan-600 to-blue-400';
+                ? 'bg-gradient-to-t from-[#2F67BB] to-[#4A8DF0]'
+                : 'bg-gradient-to-t from-[#1B2A41] to-[#4A8DF0]';
             const heights = ['h-6', 'h-16', 'h-24', 'h-12', 'h-20', 'h-28', 'h-14', 'h-8'];
             heightClass = heights[(i + (i % 3)) % heights.length];
           } else if (isCandidateActive) {
-            bgClass = 'bg-gradient-to-t from-emerald-600 to-teal-300';
-            // Scale dynamically with physical mic volume level
+            bgClass = 'bg-gradient-to-t from-emerald-600 to-teal-400';
             const dynamicScale = Math.max(0.4, candidateMicLevel / 50);
             const heights = ['h-8', 'h-20', 'h-12', 'h-24', 'h-16', 'h-28', 'h-10'];
             heightClass = heights[(i * 2) % heights.length];
@@ -94,10 +91,10 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       </div>
 
       {/* Subtle Hint */}
-      <div className="flex items-center justify-between w-full max-w-md text-[11px] text-slate-400 mt-4 z-10 px-2">
-        <span>{isAiSpeaking ? 'Dengarkan pertanyaan...' : 'Bicaralah langsung ke mikrofon'}</span>
+      <div className="flex items-center justify-between w-full max-w-md text-[11px] text-slate-500 mt-4 z-10 px-2 font-medium">
+        <span>{isAiSpeaking ? 'Dengarkan pertanyaan hingga selesai...' : 'Bicaralah langsung ke mikrofon Anda'}</span>
         {!isAiSpeaking && candidateMicLevel > 0 && (
-          <span className="font-mono text-emerald-400 text-[10px]">
+          <span className="font-mono text-emerald-700 font-bold text-[10px]">
             Input Mic: {candidateMicLevel}%
           </span>
         )}

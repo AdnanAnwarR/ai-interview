@@ -140,3 +140,64 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
 1. Menambahkan atribut `suppressHydrationWarning` pada tag `<html>` dan `<body>` di [`src/app/layout.tsx`](file:///C:/projek%20techno/projek/src/app/layout.tsx).
 2. Menambahkan state `mounted` di [`src/app/page.tsx`](file:///C:/projek%20techno/projek/src/app/page.tsx) untuk memastikan badge Navbar dan pembacaan `localStorage` hanya diaktifkan setelah komponen selesai di-mount pada sisi client (`mounted ? !!groqApiKey : false`), sehingga struktur HTML server dan client 100% identik saat hydration.
 3. Memperbarui metadata judul aplikasi di `layout.tsx` menjadi *"Real-Time AI Interview Simulator"*.
+
+---
+
+## [2026-10-05 22:30] - Pembangunan Frontend Lengkap Aplikasi "Wawancarain" (Mobile-First, Next.js App Router)
+
+### 1. Identitas Visual & Desain UI
+- Mengadopsi palet warna resmi Wawancarain:
+  - Biru Primer: `#4A8DF0` & Biru Gelap: `#2F67BB`
+  - Oranye: `#F26A2B` (tombol utama dan aksen interaktif)
+  - Kuning: `#FFC857` (aksen kecil dan penanda nilai)
+  - Navy: `#1B2A41` (teks utama berkontras tinggi)
+  - Biru Muda: `#EAF2FE` (latar belakang hangat, ramah fresh graduate)
+- Memastikan ukuran font isi minimal 16px, kontras aksesibilitas WCAG, navigasi keyboard, dan layout responsif mobile-first.
+
+### 2. Struktur Halaman & Fitur yang Dibangun
+- **/login (`src/app/login/page.tsx`):**
+  - Masuk dengan Google & opsi Guest login.
+  - Informasi manfaat untuk mahasiswa/fresh graduate (3 sesi latihan gratis, simulasi audio, evaluasi STAR).
+- **/dashboard (`src/app/dashboard/page.tsx`):**
+  - Saldo sesi latihan yang tersisa (realtime badge).
+  - Riwayat sesi wawancara (tanggal, perusahaan, posisi, nilai total 0–100).
+  - Tombol Call-to-Action "Mulai Wawancara Baru" mengarah ke `/interview/new`.
+- **/interview/new (`src/app/interview/new/page.tsx` - Layar Persiapan):**
+  - Form bertahap: Nama perusahaan target (teks bebas + chip saran BCA, GoTo, Shopee, Mandiri, Telkom, Astra), posisi target, tingkat pengalaman (Magang, Fresh Graduate, Junior).
+  - Pemilihan gaya pewawancara: Ramah & Mengayomi, Tegas & Terstruktur, serta Stress Interview.
+  - Pilihan jumlah pertanyaan (5, 8, 10 soal) dan mode jawaban (Suara atau Ketik).
+  - Kartu "Sebelum Mulai": Pengujian izin browser real-time untuk mikrofon dan kamera lokal, ringkasan tips framework STAR, dan estimasi durasi.
+  - Otomatis mengarahkan ke `/pricing` jika saldo kuota sesi telah habis.
+- **/interview/[id] (`src/app/interview/[id]/page.tsx` & `InterviewRoom.tsx`):**
+  - Layout video call interaktif:
+    - Area besar di tengah dengan Avatar HRD ilustrasi SVG yang beranimasi gelombang suara saat AI berbicara.
+    - Indikator nama pewawancara, target perusahaan, "Pertanyaan X dari Y", dan timer elapsed time.
+    - Subtitle pewawancara mengalir secara streaming (huruf demi huruf / token-by-token) seiring balasan diterima.
+    - Pratinjau kamera lokal pengguna (Picture-in-Picture) di pojok kanan atas, hanya diproses lokal di browser dan tidak direkam/diunggah.
+    - 3 tombol bulat di tengah bawah: Mikrofon (Web Speech Recognition id-ID), Kamera on/off, dan Akhiri Sesi (merah, dengan modal dialog konfirmasi).
+    - Transkrip suara yang dapat diedit sebelum dikirim, serta fallback otomatis ke mode ketik jika speech tidak didukung browser.
+    - Indikator status "pewawancara sedang merumuskan pertanyaan" dan penanganan koneksi putus dengan tombol "Coba lagi".
+    - Tombol "Lihat Hasil" otomatis muncul setelah pertanyaan penutup selesai dijawab.
+- **/interview/[id]/result (`src/app/interview/[id]/result/page.tsx`):**
+  - Bagian atas: Skor total angka besar, ringkasan performa, 3 kekuatan utama, dan 3 saran perbaikan konkret.
+  - Grafik radar SVG murni untuk 5 rubrik kompetensi: Relevansi, Struktur STAR, Kejelasan, Kepercayaan Diri, dan Contoh Nyata.
+  - Daftar kartu evaluasi per jawaban: Pertanyaan, jawaban pengguna, nilai 0–100 berkode warna, kekuatan, saran perbaikan, penanda checklist 4 elemen STAR (Situation, Task, Action, Result), dan accordion "Contoh jawaban yang lebih baik".
+  - Tombol "Latihan Lagi" dan "Unduh Hasil (PDF)" terintegrasi dengan print layout bersih.
+- **/pricing (`src/app/pricing/page.tsx`):**
+  - Harga terpusat di `src/config/pricing.ts`: 1 Sesi (Rp 5.000), Paket 5 Sesi (Rp 20.000), Langganan Bulanan (Rp 25.000).
+  - Integrasi tombol bayar dengan Midtrans Snap dan simulasi checkout sandbox langsung.
+
+### 3. Komponen Reusable
+- `src/components/interview/InterviewRoom.tsx`: Kontainer ruang video call lengkap.
+- `src/components/interview/ChatSubtitle.tsx`: Subtitle streaming teks AI berkontras tinggi.
+- `src/components/interview/ControlBar.tsx`: Bar kontrol 3 tombol bulat (Mic, Kamera, Akhiri).
+- `src/components/interview/SelfView.tsx`: Komponen picture-in-picture kamera lokal.
+- `src/components/interview/AiInterviewerAvatar.tsx`: Avatar SVG ilustrasi HRD dengan animasi audio ring.
+- `src/components/result/ScoreCard.tsx`: Kartu nilai total, ringkasan, kekuatan, dan perbaikan.
+- `src/components/result/RadarChart.tsx`: Grafik radar SVG 5 rubrik tanpa dependensi eksternal rapuh.
+- `src/components/result/AnswerFeedbackCard.tsx`: Kartu rincian evaluasi dan STAR per jawaban.
+- `src/components/shared/AppHeader.tsx`: Header global responsif dengan kuota sesi pengguna.
+
+### 4. Verifikasi Teknis & Build
+- TypeScript strict compilation (`npx tsc --noEmit`): 0 error.
+- Next.js Production Build (`npm run build`): Berhasil 100% memproduksi seluruh static & dynamic route.

@@ -9,11 +9,13 @@ import {
   PhoneOff, 
   User, 
   Bot, 
-  Sparkles,
-  MessageSquare,
-  AlertCircle,
-  CheckCircle2,
-  RefreshCw
+  Sparkles, 
+  MessageSquare, 
+  AlertCircle, 
+  CheckCircle2, 
+  RefreshCw, 
+  Loader2,
+  Building2
 } from 'lucide-react';
 import { CandidateProfile, ChatMessage } from '@/types/interview';
 import { AudioVisualizer } from './AudioVisualizer';
@@ -44,13 +46,19 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const [sttError, setSttError] = useState<string | null>(null);
   const [lowTimeWarning, setLowTimeWarning] = useState(false);
   const [autoSendCountdown, setAutoSendCountdown] = useState<number | null>(null);
+  const [isEndingCall, setIsEndingCall] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
 
   const speechEngineRef = useRef<SpeechEngine | null>(null);
   const audioHardwareRef = useRef<AudioHardwareManager | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const autoSendIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
   const isAiSpeakingRef = useRef(false);
+  const isRequestInProgressRef = useRef(false);
+  const isInterviewClosedRef = useRef(false);
+  const hasInitializedRef = useRef(false);
   const speechBufferRef = useRef('');
 
   useEffect(() => {
@@ -62,40 +70,13 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, interimSpeech]);
 
-  // Submit candidate answer to AI
-  const handleSendUserMessage = useCallback((userText: string) => {
-    if (!userText.trim() || isAiSpeakingRef.current) return;
-
-    // Clear any timers
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    if (autoSendIntervalRef.current) clearInterval(autoSendIntervalRef.current);
-    setAutoSendCountdown(null);
-    speechBufferRef.current = '';
-    setInterimSpeech('');
-    setIsCandidateSpeaking(false);
-
-    const newMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: userText.trim(),
-      timestamp: Date.now(),
-    };
-
-    setMessages((prev) => {
-      const updated = [...prev, newMsg];
-      requestAiResponse(updated);
-      return updated;
-    });
-
-    setTextInput('');
-  }, []);
-
   // Start speech recognition listening
   const startSpeechRecognition = useCallback(() => {
-    if (micMuted || isAiSpeakingRef.current) return;
+    if (micMuted || isAiSpeakingRef.current || isInterviewClosedRef.current) return;
 
     speechEngineRef.current?.startListening(
       (interim) => {
+        if (isInterviewClosedRef.current) return;
         setIsCandidateSpeaking(true);
         setInterimSpeech(interim);
         setSttError(null);
@@ -106,6 +87,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         setAutoSendCountdown(null);
       },
       (final) => {
+        if (isInterviewClosedRef.current) return;
         setSttError(null);
         if (!final || final.trim().length === 0) return;
 
@@ -134,8 +116,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         }, 1000);
 
         silenceTimerRef.current = setTimeout(() => {
+          if (isInterviewClosedRef.current) return;
           if (speechBufferRef.current.trim().length > 2) {
-            handleSendUserMessage(speechBufferRef.current.trim());
+            const textToSubmit = speechBufferRef.current.trim();
+            speechBufferRef.current = '';
+            handleSendUserMessage(textToSubmit);
           }
         }, 2200);
       },
@@ -147,10 +132,15 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         }
       }
     );
-  }, [micMuted, handleSendUserMessage]);
+  }, [micMuted]);
 
-  // Request AI response
+  // Request AI response - Guaranteed SINGLE in-flight call
   const requestAiResponse = useCallback(async (currentHistory: ChatMessage[]) => {
+    if (isRequestInProgressRef.current || isInterviewClosedRef.current) {
+      return;
+    }
+
+    isRequestInProgressRef.current = true;
     setIsAiSpeaking(true);
     speechEngineRef.current?.stopListening();
 
@@ -168,37 +158,112 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
       const data = await res.json();
       const replyText = data.reply || 'Terima kasih atas jawaban Anda. Mari kita lanjutkan.';
+      const isFinished = !!data.isFinished;
 
       const newAiMessage: ChatMessage = {
-        id: `ai_${Date.now()}`,
+        id: `ai_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         sender: 'ai',
         text: replyText,
         timestamp: Date.now(),
       };
 
-      setMessages((prev) => [...prev, newAiMessage]);
+      const finalHistory = [...currentHistory, newAiMessage];
+      setMessages(finalHistory);
 
-      // Speak AI response with voice synthesis
+      // JIKA WAWANCARA SELESAI / DITUTUP: KUNCI TOTAL DAN TUTUP PANGGILAN
+      if (isFinished) {
+        isInterviewClosedRef.current = true;
+        setIsClosed(true);
+        setIsEndingCall(true);
+        speechEngineRef.current?.stopListening();
+
+        // Ucapkan salam penutup, lalu transisi langsung ke evaluasi
+        try {
+          await speechEngineRef.current?.speak(
+            replyText,
+            () => setIsAiSpeaking(true),
+            () => {
+              setIsAiSpeaking(false);
+              setTimeout(() => {
+                onFinishInterview(finalHistory);
+              }, 1200);
+            }
+          );
+        } catch {
+          setTimeout(() => {
+            onFinishInterview(finalHistory);
+          }, 1500);
+        }
+        return;
+      }
+
+      // Bicara respon AI via speech synthesis
       await speechEngineRef.current?.speak(
         replyText,
         () => setIsAiSpeaking(true),
         () => {
           setIsAiSpeaking(false);
-          // Resume speech recognition automatically
-          setTimeout(() => {
-            startSpeechRecognition();
-          }, 400);
+          // Lanjutkan perekaman mikrofon jika belum ditutup
+          if (!isInterviewClosedRef.current) {
+            setTimeout(() => {
+              startSpeechRecognition();
+            }, 400);
+          }
         }
       );
     } catch (err) {
       console.error('Failed to get AI response:', err);
       setIsAiSpeaking(false);
-      startSpeechRecognition();
+      if (!isInterviewClosedRef.current) {
+        startSpeechRecognition();
+      }
+    } finally {
+      isRequestInProgressRef.current = false;
     }
-  }, [profile, startSpeechRecognition]);
+  }, [profile, groqApiKey, groqModel, onFinishInterview, startSpeechRecognition]);
+
+  // Submit candidate answer to AI
+  const handleSendUserMessage = useCallback((userText: string) => {
+    // KUNCI ABSOLUT: Jika wawancara sudah ditutup / sedang diproses / AI berbicara, abaikan!
+    if (
+      !userText.trim() || 
+      isAiSpeakingRef.current || 
+      isRequestInProgressRef.current || 
+      isInterviewClosedRef.current
+    ) {
+      return;
+    }
+
+    // Bersihkan timer jeda hening
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (autoSendIntervalRef.current) clearInterval(autoSendIntervalRef.current);
+    setAutoSendCountdown(null);
+    speechBufferRef.current = '';
+    setInterimSpeech('');
+    setIsCandidateSpeaking(false);
+    setTextInput('');
+
+    const newMsg: ChatMessage = {
+      id: `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      sender: 'user',
+      text: userText.trim(),
+      timestamp: Date.now(),
+    };
+
+    setMessages((prev) => {
+      const updated = [...prev, newMsg];
+      setTimeout(() => {
+        requestAiResponse(updated);
+      }, 0);
+      return updated;
+    });
+  }, [requestAiResponse]);
 
   // Initialize Speech Engine & Hardware volume monitoring on mount
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     const engine = new SpeechEngine();
     speechEngineRef.current = engine;
 
@@ -209,7 +274,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       setCandidateMicLevel(volume);
     });
 
-    // Start initial turn with greeting
+    // Mulai giliran pertama (sapaan pembuka AI)
     requestAiResponse([]);
 
     return () => {
@@ -222,6 +287,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   }, []);
 
   const toggleMic = () => {
+    if (isInterviewClosedRef.current) return;
     if (micMuted) {
       setMicMuted(false);
       startSpeechRecognition();
@@ -241,43 +307,56 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   };
 
   const handleManualSendSpoken = () => {
+    if (isInterviewClosedRef.current) return;
     const textToSend = speechBufferRef.current || interimSpeech || textInput;
     if (textToSend.trim()) {
       handleSendUserMessage(textToSend.trim());
     }
   };
 
+  const handleForceEndNow = () => {
+    isInterviewClosedRef.current = true;
+    setIsClosed(true);
+    setIsEndingCall(true);
+    speechEngineRef.current?.stopListening();
+    speechEngineRef.current?.stopSpeaking();
+    onFinishInterview(messages);
+  };
+
+  const isInputLocked = isAiSpeaking || isEndingCall || isClosed;
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col h-[calc(100vh-5rem)]">
-      {/* Top Session Header */}
-      <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 rounded-2xl px-5 py-3 mb-4 backdrop-blur-md">
+      {/* Top Session Header - Warm Navy & Blue Accent */}
+      <div className="flex items-center justify-between bg-white border border-[#2F67BB]/20 rounded-2xl px-5 py-3 mb-4 shadow-sm">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
-            <Sparkles className="w-4 h-4" />
+          <div className="w-10 h-10 rounded-xl bg-[#EAF2FE] text-[#2F67BB] flex items-center justify-center border border-[#4A8DF0]/30 shadow-sm">
+            <Building2 className="w-5 h-5 text-[#2F67BB]" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-white flex items-center space-x-2">
+            <h2 className="text-sm font-bold text-[#1B2A41] flex items-center space-x-2">
               <span>{profile.selectedMode === 'hrd' ? 'Sarah (HR Recruiter)' : 'Alex (Senior Tech Lead)'}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-normal">
-                {profile.targetRole}
+              <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#EAF2FE] text-[#2F67BB] font-semibold border border-[#4A8DF0]/20">
+                {profile.targetCompany || 'Perusahaan Target'}
               </span>
             </h2>
-            <p className="text-[11px] text-slate-400">
-              {profile.selectedMode === 'hrd' ? 'Behavioral & STAR Interview' : 'Technical & Architecture Interview'}
+            <p className="text-[11px] text-slate-500 font-medium">
+              Posisi: <span className="font-semibold text-[#1B2A41]">{profile.targetRole}</span> • {profile.selectedMode === 'hrd' ? 'Behavioral & STAR' : 'Technical & Architecture'}
             </p>
           </div>
         </div>
 
-        {/* Live Timer */}
+        {/* Live Timer & Emergency End Button */}
         <div className="flex items-center space-x-3">
           <LiveCountdownTimer
-            onTimeExpired={() => onFinishInterview(messages)}
+            onTimeExpired={handleForceEndNow}
             onLowTimeAlert={handleLowTimeAlert}
           />
 
           <button
-            onClick={() => onFinishInterview(messages)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 text-xs font-semibold transition-colors"
+            onClick={handleForceEndNow}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-semibold transition-all active:scale-95"
+            title="Akhiri wawancara dan lihat hasil"
           >
             <PhoneOff className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Selesai Sekarang</span>
@@ -285,16 +364,35 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         </div>
       </div>
 
+      {/* Auto Closing Call Notification Banner */}
+      {isClosed && (
+        <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 mb-4 flex items-center justify-between text-emerald-800 text-xs shadow-md animate-fade-in">
+          <div className="flex items-center space-x-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <div>
+              <p className="font-bold text-sm text-emerald-900">Sesi Wawancara Telah Resmi Ditutup</p>
+              <p className="text-emerald-700 text-xs">Panggilan dihentikan. Sistem sedang menyiapkan Scorecard dan evaluasi setiap jawaban Anda...</p>
+            </div>
+          </div>
+          <button
+            onClick={handleForceEndNow}
+            className="px-4 py-2 rounded-xl bg-[#F26A2B] hover:bg-[#d95316] text-white font-bold text-xs shadow-sm transition-all flex items-center space-x-1.5"
+          >
+            <span>Buka Scorecard</span>
+          </button>
+        </div>
+      )}
+
       {/* STT Error Banner */}
-      {sttError && (
-        <div className="bg-rose-500/15 border border-rose-500/40 rounded-xl p-3 mb-4 flex items-center justify-between text-rose-300 text-xs">
+      {sttError && !isClosed && (
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 mb-4 flex items-center justify-between text-rose-700 text-xs">
           <div className="flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
             <span>{sttError}</span>
           </div>
           <button
             onClick={startSpeechRecognition}
-            className="px-2.5 py-1 rounded-lg bg-rose-600/30 text-white font-medium hover:bg-rose-600/50 flex items-center space-x-1"
+            className="px-2.5 py-1 rounded-lg bg-rose-200 text-rose-800 font-medium hover:bg-rose-300 flex items-center space-x-1"
           >
             <RefreshCw className="w-3 h-3" />
             <span>Coba Lagi</span>
@@ -303,13 +401,13 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       )}
 
       {/* Low Time Alert Banner */}
-      {lowTimeWarning && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 flex items-center justify-between text-amber-300 text-xs animate-pulse">
+      {lowTimeWarning && !isClosed && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center justify-between text-amber-800 text-xs animate-pulse">
           <div className="flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 text-amber-400" />
-            <span>Waktu tersisa kurang dari 2 menit. Sesi akan otomatis berakhir dan dievaluasi tepat di 00:00.</span>
+            <AlertCircle className="w-4 h-4 text-amber-600" />
+            <span>Waktu tersisa kurang dari 2 menit. Sesi akan otomatis berakhir dan dievaluasi di 00:00.</span>
           </div>
-          <button onClick={() => setLowTimeWarning(false)} className="text-amber-400 hover:text-white font-bold ml-2">
+          <button onClick={() => setLowTimeWarning(false)} className="text-amber-700 hover:text-amber-900 font-bold ml-2">
             ✕
           </button>
         </div>
@@ -318,7 +416,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       {/* Main Grid: Visualizer & Live Conversation */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
         
-        {/* Left Column: Audio Waveform Visualizer & Status */}
+        {/* Left Column: Audio Waveform Visualizer & Live Voice Subtitle */}
         <div className="lg:col-span-5 flex flex-col justify-between space-y-4">
           <AudioVisualizer
             isAiSpeaking={isAiSpeaking}
@@ -328,37 +426,39 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
           />
 
           {/* Active Speech Buffer / Live Subtitle Box */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 text-xs space-y-2 relative overflow-hidden">
+          <div className="bg-white border border-[#2F67BB]/15 rounded-2xl p-4 text-xs space-y-2 shadow-sm">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-slate-300 flex items-center space-x-1.5">
-                <Mic className={`w-3.5 h-3.5 ${isCandidateSpeaking || candidateMicLevel > 10 ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
+              <span className="font-bold text-[#1B2A41] flex items-center space-x-1.5">
+                <Mic className={`w-3.5 h-3.5 ${isCandidateSpeaking || candidateMicLevel > 10 ? 'text-emerald-600 animate-pulse' : 'text-[#4A8DF0]'}`} />
                 <span>Input Suara Langsung Anda:</span>
               </span>
-              {autoSendCountdown !== null && (
-                <span className="text-[10px] text-amber-400 font-mono font-bold animate-pulse">
+              {autoSendCountdown !== null && !isClosed && (
+                <span className="text-[10px] text-[#F26A2B] font-mono font-bold animate-pulse">
                   Mengirim dalam {autoSendCountdown}s...
                 </span>
               )}
             </div>
 
-            <div className="min-h-[48px] bg-slate-950/70 rounded-xl p-3 border border-slate-800/80 text-slate-200 text-xs leading-relaxed">
-              {interimSpeech || speechBufferRef.current ? (
-                <p className="text-emerald-300 font-medium">
+            <div className="min-h-[52px] bg-[#EAF2FE]/60 rounded-xl p-3 border border-[#4A8DF0]/20 text-[#1B2A41] text-xs leading-relaxed">
+              {isClosed ? (
+                <p className="text-slate-500 italic">Sesi telah selesai. Tidak menerima input suara lagi.</p>
+              ) : interimSpeech || speechBufferRef.current ? (
+                <p className="text-emerald-800 font-medium">
                   {interimSpeech || speechBufferRef.current}
                 </p>
               ) : isAiSpeaking ? (
-                <p className="text-slate-500 italic">Mendengarkan giliran bicara pewawancara AI...</p>
+                <p className="text-slate-500 italic">Mendengarkan pewawancara AI berbicara...</p>
               ) : (
-                <p className="text-slate-500 italic">Silakan mulai berbicara langsung ke mikrofon...</p>
+                <p className="text-slate-500 italic">Silakan mulai berbicara langsung ke mikrofon Anda...</p>
               )}
             </div>
 
             {/* Instant Send Voice Answer Button */}
-            {(interimSpeech || speechBufferRef.current) && (
+            {(interimSpeech || speechBufferRef.current) && !isClosed && (
               <button
                 onClick={handleManualSendSpoken}
-                disabled={isAiSpeaking}
-                className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-lg shadow-emerald-600/20 transition-all active:scale-[0.99]"
+                disabled={isInputLocked}
+                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-sm transition-all active:scale-[0.99] disabled:opacity-40"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Selesai Bicara & Kirim Jawaban Sekarang</span>
@@ -366,116 +466,153 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
             )}
           </div>
 
-          {/* Quick Mic Control Bar */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+          {/* Mic Control Bar */}
+          <div className="bg-white border border-[#2F67BB]/15 rounded-2xl p-3 flex items-center justify-between shadow-sm">
             <div className="flex items-center space-x-3 text-xs">
               <button
                 onClick={toggleMic}
+                disabled={isClosed}
                 className={`p-3 rounded-xl flex items-center justify-center transition-all ${
-                  micMuted
-                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 hover:bg-rose-500/30'
-                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30'
+                  isClosed
+                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                    : micMuted
+                    ? 'bg-rose-100 text-rose-600 border border-rose-300 hover:bg-rose-200'
+                    : 'bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200'
                 }`}
               >
-                {micMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                {micMuted || isClosed ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
               </button>
               <div>
-                <p className="font-semibold text-white">
-                  {micMuted ? 'Mikrofon Dijeda (Muted)' : 'Mikrofon Aktif Mendengarkan'}
+                <p className="font-bold text-[#1B2A41]">
+                  {isClosed
+                    ? 'Mikrofon Ditutup'
+                    : micMuted
+                    ? 'Mikrofon Dijeda (Muted)'
+                    : 'Mikrofon Aktif Mendengarkan'}
                 </p>
-                <p className="text-[10px] text-slate-400">
-                  {micMuted ? 'Klik untuk mengaktifkan kembali' : 'Bicara santai, sistem akan mendeteksi otomatis'}
+                <p className="text-[10px] text-slate-500">
+                  {isClosed
+                    ? 'Wawancara telah berakhir'
+                    : micMuted
+                    ? 'Klik ikon untuk menyalakan mic'
+                    : 'Bicara santai, AI mendeteksi otomatis'}
                 </p>
               </div>
             </div>
 
-            <button
-              onClick={() => {
-                speechEngineRef.current?.stopListening();
-                setTimeout(() => startSpeechRecognition(), 200);
-              }}
-              title="Mulai Ulang STT"
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
+            {!isClosed && (
+              <button
+                onClick={() => {
+                  speechEngineRef.current?.stopListening();
+                  setTimeout(() => startSpeechRecognition(), 200);
+                }}
+                title="Mulai Ulang STT"
+                className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Right Column: Live Conversation Transcript Feed */}
-        <div className="lg:col-span-7 flex flex-col bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
-            <span className="text-xs font-semibold text-slate-300 flex items-center space-x-2">
-              <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+        <div className="lg:col-span-7 flex flex-col bg-white border border-[#2F67BB]/20 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-5 py-3 border-b border-[#2F67BB]/15 flex items-center justify-between bg-[#EAF2FE]/40">
+            <span className="text-xs font-bold text-[#1B2A41] flex items-center space-x-2">
+              <MessageSquare className="w-4 h-4 text-[#4A8DF0]" />
               <span>Transkrip Percakapan Real-Time</span>
             </span>
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[10px] font-semibold text-[#2F67BB] bg-white px-2 py-0.5 rounded-full border border-[#4A8DF0]/20">
               {messages.length} pesan bertukar
             </span>
           </div>
 
           {/* Transcript Scroll Area */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-4">
+          <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50">
             {messages.map((msg) => (
               <div
                 key={msg.id}
                 className={`flex space-x-2.5 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {msg.sender === 'ai' && (
-                  <div className="w-7 h-7 rounded-lg bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                  <div className="w-8 h-8 rounded-xl bg-[#EAF2FE] text-[#2F67BB] border border-[#4A8DF0]/30 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
                     <Bot className="w-4 h-4" />
                   </div>
                 )}
 
                 <div
-                  className={`max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-md ${
+                  className={`max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-sm ${
                     msg.sender === 'user'
-                      ? 'bg-indigo-600 text-white rounded-br-none'
-                      : 'bg-slate-800/90 text-slate-200 border border-slate-700/60 rounded-bl-none'
+                      ? 'bg-[#4A8DF0] text-white rounded-br-none'
+                      : 'bg-white text-[#1B2A41] border border-[#2F67BB]/15 rounded-bl-none'
                   }`}
                 >
-                  <p className="font-semibold text-[10px] mb-1 opacity-70">
+                  <p className="font-bold text-[10px] mb-1 opacity-80 uppercase tracking-wide">
                     {msg.sender === 'user' ? profile.name : profile.selectedMode === 'hrd' ? 'Sarah (HRD)' : 'Alex (Tech Lead)'}
                   </p>
                   <p>{msg.text}</p>
                 </div>
 
                 {msg.sender === 'user' && (
-                  <div className="w-7 h-7 rounded-lg bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                  <div className="w-8 h-8 rounded-xl bg-orange-100 text-[#F26A2B] border border-[#F26A2B]/30 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
                     <User className="w-4 h-4" />
                   </div>
                 )}
               </div>
             ))}
 
+            {/* Interim live speech recognition text */}
+            {interimSpeech && !isClosed && (
+              <div className="flex justify-end space-x-2.5">
+                <div className="max-w-[82%] rounded-2xl rounded-br-none px-4 py-3 text-xs leading-relaxed bg-[#EAF2FE] border border-[#4A8DF0] text-[#1B2A41] italic animate-pulse">
+                  <span className="text-[10px] font-bold block text-[#2F67BB]">Merekam ucapan Anda...</span>
+                  <p>{interimSpeech}</p>
+                </div>
+              </div>
+            )}
+
             <div ref={transcriptEndRef} />
           </div>
 
-          {/* Text input fallback / quick submit */}
-          <div className="p-3 border-t border-slate-800 bg-slate-950/60">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSendUserMessage(textInput);
-              }}
-              className="flex items-center space-x-2"
-            >
-              <input
-                type="text"
-                disabled={isAiSpeaking}
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder={isAiSpeaking ? 'Tunggu AI selesai berbicara...' : 'Ketik jawaban alternatif (opsional jika mic bising)...'}
-                className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-              />
-              <button
-                type="submit"
-                disabled={isAiSpeaking || !textInput.trim()}
-                className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 transition-colors"
+          {/* Text input / Locked State */}
+          <div className="p-3 border-t border-[#2F67BB]/15 bg-white">
+            {isClosed ? (
+              <div className="w-full py-3 px-4 rounded-xl bg-[#EAF2FE] border border-[#4A8DF0]/40 text-center text-xs font-semibold text-[#1B2A41] flex items-center justify-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Sesi wawancara telah ditutup. Silakan klik &quot;Buka Scorecard&quot; untuk melihat nilai evaluasi.</span>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!isInputLocked) {
+                    handleSendUserMessage(textInput);
+                  }
+                }}
+                className="flex items-center space-x-2"
               >
-                <Send className="w-4 h-4" />
-              </button>
-            </form>
+                <input
+                  type="text"
+                  disabled={isInputLocked}
+                  value={textInput}
+                  onChange={(e) => setTextInput(e.target.value)}
+                  placeholder={
+                    isAiSpeaking
+                      ? 'Tunggu pewawancara selesai berbicara...'
+                      : 'Ketik jawaban alternatif (opsional jika mic bising)...'
+                  }
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-[#1B2A41] placeholder-slate-400 focus:outline-none focus:border-[#4A8DF0] focus:bg-white disabled:opacity-60 transition-all"
+                />
+                <button
+                  type="submit"
+                  disabled={isInputLocked || !textInput.trim()}
+                  className="p-2.5 rounded-xl bg-[#F26A2B] hover:bg-[#d95316] text-white disabled:opacity-40 transition-all shadow-sm active:scale-95"
+                  title="Kirim jawaban"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+            )}
           </div>
         </div>
 
