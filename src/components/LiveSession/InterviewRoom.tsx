@@ -60,6 +60,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const isInterviewClosedRef = useRef(false);
   const hasInitializedRef = useRef(false);
   const speechBufferRef = useRef('');
+  const messagesRef = useRef<ChatMessage[]>([]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     isAiSpeakingRef.current = isAiSpeaking;
@@ -136,7 +141,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
   // Request AI response - Guaranteed SINGLE in-flight call
   const requestAiResponse = useCallback(async (currentHistory: ChatMessage[]) => {
-    if (isRequestInProgressRef.current || isInterviewClosedRef.current) {
+    if (isInterviewClosedRef.current) {
       return;
     }
 
@@ -167,37 +172,56 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         timestamp: Date.now(),
       };
 
-      const finalHistory = [...currentHistory, newAiMessage];
-      setMessages(finalHistory);
+      // DEDUPLIKASI KETAT: Pastikan pesan AI tidak terduplikasi berturut-turut
+      let finalHistory = currentHistory;
+      const lastItem = currentHistory[currentHistory.length - 1];
+      if (!lastItem || lastItem.sender !== 'ai' || lastItem.text !== replyText) {
+        finalHistory = [...currentHistory, newAiMessage];
+        setMessages(finalHistory);
+        messagesRef.current = finalHistory;
+      }
 
-      // JIKA WAWANCARA SELESAI / DITUTUP: KUNCI TOTAL DAN TUTUP PANGGILAN
+      // JIKA WAWANCARA SELESAI / DITUTUP: KUNCI TOTAL DAN TUTUP PANGGILAN OTOMATIS
       if (isFinished) {
         isInterviewClosedRef.current = true;
         setIsClosed(true);
         setIsEndingCall(true);
         speechEngineRef.current?.stopListening();
 
-        // Ucapkan salam penutup, lalu transisi langsung ke evaluasi
+        let finishExecuted = false;
+        const triggerFinalTransition = () => {
+          if (finishExecuted) return;
+          finishExecuted = true;
+          speechEngineRef.current?.stopSpeaking();
+          speechEngineRef.current?.stopListening();
+          setIsAiSpeaking(false);
+          onFinishInterview(finalHistory);
+        };
+
+        // Safety fallback timer: panggilan PASTI tertutup dan membuka evaluasi dalam maks 5 detik
+        const fallbackFinishTimer = setTimeout(() => {
+          triggerFinalTransition();
+        }, Math.min(5000, Math.max(2500, replyText.length * 70)));
+
         try {
           await speechEngineRef.current?.speak(
             replyText,
             () => setIsAiSpeaking(true),
             () => {
-              setIsAiSpeaking(false);
+              clearTimeout(fallbackFinishTimer);
               setTimeout(() => {
-                onFinishInterview(finalHistory);
-              }, 1200);
+                triggerFinalTransition();
+              }, 800);
             }
           );
         } catch {
-          setTimeout(() => {
-            onFinishInterview(finalHistory);
-          }, 1500);
+          clearTimeout(fallbackFinishTimer);
+          triggerFinalTransition();
         }
         return;
       }
 
-      // Bicara respon AI via speech synthesis
+      // Bicara respon AI via speech synthesis jika belum selesai
       await speechEngineRef.current?.speak(
         replyText,
         () => setIsAiSpeaking(true),
@@ -218,15 +242,18 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         startSpeechRecognition();
       }
     } finally {
-      isRequestInProgressRef.current = false;
+      if (!isInterviewClosedRef.current) {
+        isRequestInProgressRef.current = false;
+      }
     }
   }, [profile, groqApiKey, groqModel, onFinishInterview, startSpeechRecognition]);
 
   // Submit candidate answer to AI
   const handleSendUserMessage = useCallback((userText: string) => {
+    const trimmed = userText.trim();
     // KUNCI ABSOLUT: Jika wawancara sudah ditutup / sedang diproses / AI berbicara, abaikan!
     if (
-      !userText.trim() || 
+      !trimmed || 
       isAiSpeakingRef.current || 
       isRequestInProgressRef.current || 
       isInterviewClosedRef.current
@@ -234,7 +261,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
       return;
     }
 
-    // Bersihkan timer jeda hening
+    // LOCK IMMEDIATELY untuk mencegah pengiriman ganda
+    isRequestInProgressRef.current = true;
+    speechEngineRef.current?.stopListening();
+
+    // Bersihkan timer jeda hening & input buffer
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (autoSendIntervalRef.current) clearInterval(autoSendIntervalRef.current);
     setAutoSendCountdown(null);
@@ -246,17 +277,24 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     const newMsg: ChatMessage = {
       id: `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       sender: 'user',
-      text: userText.trim(),
+      text: trimmed,
       timestamp: Date.now(),
     };
 
-    setMessages((prev) => {
-      const updated = [...prev, newMsg];
-      setTimeout(() => {
-        requestAiResponse(updated);
-      }, 0);
-      return updated;
-    });
+    const currentList = messagesRef.current;
+    const lastMsg = currentList[currentList.length - 1];
+    if (lastMsg && lastMsg.sender === 'user' && lastMsg.text === trimmed) {
+      // Duplikat terdeteksi, batalkan in-flight lock
+      isRequestInProgressRef.current = false;
+      return;
+    }
+
+    const updated = [...currentList, newMsg];
+    messagesRef.current = updated;
+    setMessages(updated);
+
+    // Panggil requestAiResponse langsung secara sinkron tanpa setTimeout di dalam updater
+    requestAiResponse(updated);
   }, [requestAiResponse]);
 
   // Initialize Speech Engine & Hardware volume monitoring on mount

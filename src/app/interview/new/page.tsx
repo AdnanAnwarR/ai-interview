@@ -1,114 +1,260 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { AppHeader } from '@/components/shared/AppHeader';
-import { 
-  CandidateLevel, 
-  InterviewerStyle, 
-  QuestionCount, 
-  AnswerMode 
-} from '@/types/wawancara';
-import { 
-  Building2, 
-  Briefcase, 
-  GraduationCap, 
-  UserCheck, 
-  HelpCircle, 
-  Mic, 
-  Keyboard, 
-  Video, 
-  Sparkles, 
-  Clock, 
-  CheckCircle2, 
-  AlertCircle, 
-  Loader2, 
-  ArrowRight,
-  ShieldCheck,
-  Lightbulb
-} from 'lucide-react';
+import Link from 'next/link';
+import { CandidateLevel, InterviewerStyle, QuestionCount } from '@/types/wawancara';
+import { AlertCircle, Loader2 } from 'lucide-react';
 
 export default function NewInterviewPage() {
   const router = useRouter();
 
-  // Form State
-  const [companyName, setCompanyName] = useState('Bank Central Asia (BCA)');
-  const [targetRole, setTargetRole] = useState('Management Trainee (ODP)');
-  const [level, setLevel] = useState<CandidateLevel>('fresh_graduate');
-  const [interviewerStyle, setInterviewerStyle] = useState<InterviewerStyle>('ramah');
-  const [questionCount, setQuestionCount] = useState<QuestionCount>(5);
-  const [answerMode, setAnswerMode] = useState<AnswerMode>('suara');
+  // Balance / Sessions
+  const [remainingSessions, setRemainingSessions] = useState<number>(1);
 
-  // Hardware Check State
-  const [micStatus, setMicStatus] = useState<'idle' | 'checking' | 'granted' | 'denied'>('idle');
-  const [camStatus, setCamStatus] = useState<'idle' | 'checking' | 'granted' | 'denied'>('idle');
+  // Step state (0: Target, 1: Lowongan & CV, 2: Suasana, 3: Cek perangkat, 4: Ringkasan)
+  const [cur, setCur] = useState(0);
+  const [done, setDone] = useState<Set<number>>(new Set());
 
-  // Submission State
+  // Step 0: Target
+  const [mode, setMode] = useState<'HRD' | 'Teknis'>('HRD');
+  const [company, setCompany] = useState('');
+  const [position, setPosition] = useState('');
+  const [level, setLevel] = useState<'Magang' | 'Fresh graduate' | 'Junior'>('Fresh graduate');
+  const [coError, setCoError] = useState('');
+  const [poError, setPoError] = useState('');
+
+  // Step 1: Lowongan dan CV
+  const [jobDescription, setJobDescription] = useState('');
+  const [jdError, setJdError] = useState('');
+  const [cvText, setCvText] = useState('');
+  const [cvFileName, setCvFileName] = useState('');
+  const [cvLabel, setCvLabel] = useState('Unggah file CV (PDF atau TXT)');
+  const [cvNote, setCvNote] = useState('CV hanya dipakai untuk sesi ini dan tidak disimpan setelah selesai.');
+
+  // Step 2: Suasana
+  const [style, setStyle] = useState<'Ramah' | 'Tegas' | 'Menantang'>('Ramah');
+  const [questionCount, setQuestionCount] = useState<5 | 8 | 10>(8);
+
+  // Step 3: Cek perangkat
+  const [micStatus, setMicStatus] = useState<'idle' | 'checking' | 'ok' | 'no'>('idle');
+  const [micMessage, setMicMessage] = useState('Belum dicek');
+  const [camStatus, setCamStatus] = useState<'idle' | 'checking' | 'ok' | 'no'>('idle');
+  const [camMessage, setCamMessage] = useState('Belum dicek');
+  const [ansVoice, setAnsVoice] = useState(true);
+  const [ansType, setAnsType] = useState(true);
+
+  // Submission state
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Quick Suggestion Chips untuk Perusahaan
-  const popularCompanies = [
-    'Bank Central Asia (BCA)',
-    'GoTo (Gojek & Tokopedia)',
-    'Shopee Indonesia',
-    'Bank Mandiri',
-    'Telkom Indonesia',
-    'Astra International',
-  ];
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Test izin mic & kamera di browser
-  const handleTestHardware = async () => {
-    setMicStatus('checking');
-    setCamStatus('checking');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: true,
-      });
+  const stepNames = ['Target', 'Lowongan dan CV', 'Suasana', 'Cek perangkat', 'Ringkasan'];
 
-      // Sukses
-      setMicStatus('granted');
-      setCamStatus('granted');
+  // Fetch balance
+  useEffect(() => {
+    fetch('/api/user/balance')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.sessionsRemaining === 'number') {
+          setRemainingSessions(data.sessionsRemaining);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
-      // Matikan stream setelah pengujian
-      stream.getTracks().forEach((track) => track.stop());
-    } catch (err) {
-      console.warn('Izin perangkat diblokir atau tidak tersedia:', err);
-      setMicStatus('denied');
-      setCamStatus('denied');
+  // Validasi langkah
+  const validateStep = (targetStep: number): boolean => {
+    let isValid = true;
+    const c = company.trim();
+    const p = position.trim();
+
+    if (!c) {
+      setCoError('Isi nama perusahaan yang kamu lamar.');
+      isValid = false;
+    } else {
+      setCoError('');
+    }
+
+    if (!p) {
+      setPoError('Isi posisi yang kamu lamar.');
+      isValid = false;
+    } else {
+      setPoError('');
+    }
+
+    if (targetStep >= 2) {
+      const jd = jobDescription.trim();
+      if (!jd) {
+        setJdError('Tempel deskripsi lowongan agar pertanyaannya sesuai.');
+        isValid = false;
+      } else {
+        setJdError('');
+      }
+    }
+
+    return isValid;
+  };
+
+  const goToStep = (i: number) => {
+    if (i > cur && !validateStep(i)) {
+      setCur(company.trim() && position.trim() ? 1 : 0);
+      return;
+    }
+
+    setCur(i);
+
+    setDone((prev) => {
+      const updated = new Set(prev);
+      if (i > 0) updated.add(0);
+      if (i > 1) updated.add(1);
+      if (i > 2) updated.add(2);
+      if (i > 3) updated.add(3);
+      return updated;
+    });
+
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
+  // Toggle cara menjawab (minimal satu harus aktif)
+  const toggleVoice = () => {
+    if (ansVoice && !ansType) return;
+    setAnsVoice(!ansVoice);
+  };
 
-    if (!companyName.trim() || !targetRole.trim()) {
-      setErrorMessage('Harap isi nama perusahaan dan posisi yang dilamar.');
+  const toggleType = () => {
+    if (ansType && !ansVoice) return;
+    setAnsType(!ansType);
+  };
+
+  // Quick preset chips
+  const applyQuickPreset = (compName: string, posName: string) => {
+    setCompany(compName);
+    setPosition(posName);
+    setCoError('');
+    setPoError('');
+  };
+
+  // Handle CV File Upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCvFileName(file.name);
+    setCvLabel(`Membaca ${file.name}...`);
+
+    try {
+      if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        const text = await file.text();
+        setCvText(text.trim());
+        setCvLabel(`✓ ${file.name} (klik untuk ganti file)`);
+      } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        const win = window as unknown as { pdfjsLib?: { getDocument: (opts: { data: ArrayBuffer }) => { promise: Promise<{ numPages: number; getPage: (i: number) => Promise<{ getTextContent: () => Promise<{ items: Array<{ str: string }> }> }> }> }; GlobalWorkerOptions: { workerSrc: string } } };
+        if (win.pdfjsLib) {
+          win.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          const buffer = await file.arrayBuffer();
+          const doc = await win.pdfjsLib.getDocument({ data: buffer }).promise;
+          let fullText = '';
+          for (let i = 1; i <= doc.numPages; i++) {
+            const page = await doc.getPage(i);
+            const content = await page.getTextContent();
+            fullText += content.items.map((x) => x.str).join(' ') + '\n';
+          }
+          if (fullText.trim()) {
+            setCvText(fullText.trim());
+            setCvLabel(`✓ ${file.name} (klik untuk ganti file)`);
+            return;
+          }
+        }
+        const text = await file.text();
+        if (text && text.length > 50) {
+          setCvText(text.slice(0, 4000));
+        } else {
+          setCvText(`[File Terlampir: ${file.name}] Pengalaman kandidat sesuai CV.`);
+        }
+        setCvLabel(`✓ ${file.name} (klik untuk ganti file)`);
+      } else {
+        const text = await file.text();
+        setCvText(text.trim());
+        setCvLabel(`✓ ${file.name} (klik untuk ganti file)`);
+      }
+    } catch {
+      setCvLabel(`${file.name} terpilih`);
+      setCvNote('Teks CV belum bisa dibaca otomatis. Silakan tempel manual di kolom di bawah.');
+    }
+  };
+
+  // Test microphone hardware
+  const handleTestMic = async () => {
+    setMicStatus('checking');
+    setMicMessage('Mengecek...');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      setMicStatus('ok');
+      setMicMessage('Siap');
+    } catch {
+      setMicStatus('no');
+      setMicMessage('Izin ditolak atau tidak ada perangkat. Kamu tetap bisa menjawab dengan mengetik.');
+    }
+  };
+
+  // Test camera hardware
+  const handleTestCam = async () => {
+    setCamStatus('checking');
+    setCamMessage('Mengecek...');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach((t) => t.stop());
+      setCamStatus('ok');
+      setCamMessage('Siap');
+    } catch {
+      setCamStatus('no');
+      setCamMessage('Izin ditolak atau tidak ada perangkat. Kamu tetap bisa menjawab dengan mengetik.');
+    }
+  };
+
+  // Submit form to backend
+  const handleStartInterview = async () => {
+    if (!validateStep(4)) {
+      goToStep(0);
       return;
     }
 
     setSubmitting(true);
+    setErrorMessage(null);
+
+    const mappedLevel: CandidateLevel =
+      level === 'Magang' ? 'magang' : level === 'Junior' ? 'junior' : 'fresh_graduate';
+
+    const mappedStyle: InterviewerStyle =
+      style === 'Tegas' ? 'tegas' : style === 'Menantang' ? 'stress' : 'ramah';
+
+    const mappedCount: QuestionCount = questionCount;
 
     try {
       const res = await fetch('/api/interviews', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyName: companyName.trim(),
-          targetRole: targetRole.trim(),
-          level,
-          interviewerStyle,
-          questionCount,
-          answerMode,
+          companyName: company.trim(),
+          targetRole: position.trim(),
+          level: mappedLevel,
+          interviewerStyle: mappedStyle,
+          questionCount: mappedCount,
+          answerMode: ansVoice ? 'suara' : 'ketik',
+          jobDescription: jobDescription.trim(),
+          cvContent: cvText.trim(),
         }),
       });
 
       const data = await res.json();
 
       if (res.status === 403 || data.error === 'QUOTA_EXCEEDED') {
-        // Kuota habis -> arahkan ke halaman pricing
         router.push('/pricing?reason=quota_exceeded');
         return;
       }
@@ -117,7 +263,6 @@ export default function NewInterviewPage() {
         throw new Error(data.message || data.error || 'Gagal memulai wawancara.');
       }
 
-      // Masuk ke ruang wawancara
       router.push(`/interview/${data.id}`);
     } catch (err: unknown) {
       setSubmitting(false);
@@ -126,353 +271,616 @@ export default function NewInterviewPage() {
     }
   };
 
-  return (
-    <div className="min-h-screen flex flex-col bg-[#EAF2FE] text-[#1B2A41]">
-      <AppHeader />
+  const getAnswerModeText = () => {
+    if (ansVoice && ansType) return 'Dengan suara dan mengetik';
+    if (ansVoice) return 'Dengan suara';
+    return 'Dengan mengetik';
+  };
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8">
-        {/* Title & Introduction */}
-        <div className="mb-8 text-center sm:text-left">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white text-[#2F67BB] text-xs font-bold shadow-xs mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-[#FFC857]" />
-            Layar Persiapan Wawancara
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1B2A41]">
-            Kustomisasi Sesi Latihan Anda
-          </h1>
-          <p className="text-sm sm:text-base text-slate-600 mt-1 max-w-2xl leading-relaxed">
-            Atur parameter wawancara sesuai target impian Anda. AI akan mengadopsi persona pewawancara sungguhan dan menggali pengalaman Anda secara mendalam.
-          </p>
-        </div>
+  return (
+    <div className="w-full min-h-screen bg-[#F6F9FE] text-[#1B2A41]">
+      {/* Header */}
+      <header className="flex items-center justify-between max-w-[1040px] mx-auto px-5 py-4.5">
+        <Link href="/" className="flex items-center gap-2.5 font-fraunces font-bold text-2xl text-[#1B2A41]">
+          <svg width="34" height="34" viewBox="0 0 512 512" aria-hidden="true" className="shrink-0">
+            <rect width="512" height="512" rx="110" fill="#3C7BDB" />
+            <path
+              d="M176 140H336a40 40 0 0 1 40 40V290a40 40 0 0 1-40 40H250L190 388V330H176a40 40 0 0 1-40-40V180a40 40 0 0 1 40-40Z"
+              fill="#fff"
+            />
+            <path
+              d="M184 196 222 288 256 214 290 288 328 196"
+              fill="none"
+              stroke="#F26A2B"
+              strokeWidth="26"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span>
+            Wawancarain<span className="text-[#F26A2B]">.</span>
+          </span>
+        </Link>
+        <span className="bg-[#EAF2FE] text-[#2F67BB] rounded-full px-3.5 py-1.5 font-semibold text-sm">
+          {remainingSessions} sesi gratis tersisa
+        </span>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-[1040px] mx-auto px-5 pt-2 pb-28">
+        <h1 className="font-fraunces text-3xl sm:text-4xl lg:text-[44px] font-bold leading-tight tracking-tight">
+          Siapkan wawancaramu
+        </h1>
+        <p className="text-[#5F6B7D] mt-2 mb-6 max-w-[56ch] text-base">
+          Tiga langkah singkat. Kamu bisa mengubah pilihan kapan saja sebelum wawancara dimulai.
+        </p>
 
         {errorMessage && (
-          <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600" />
+          <div className="max-w-[760px] mx-auto mb-5 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 text-rose-600" />
             <span>{errorMessage}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Card 1: Target Perusahaan & Posisi */}
-          <div className="rounded-3xl bg-white border border-[#2F67BB]/15 p-6 sm:p-8 shadow-xs space-y-6">
-            <h2 className="text-lg font-bold text-[#1B2A41] flex items-center gap-2 pb-3 border-b border-slate-100">
-              <Building2 className="w-5 h-5 text-[#4A8DF0]" />
-              1. Target Pekerjaan & Perusahaan
-            </h2>
+        {/* Steps navigation bar */}
+        <nav className="flex gap-2 mb-5 flex-wrap" aria-label="Langkah persiapan">
+          {stepNames.map((name, i) => {
+            const isActive = i === cur;
+            const isDone = done.has(i);
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => goToStep(i)}
+                className={`flex items-center gap-2 border rounded-full py-2 pr-4 pl-2 font-semibold transition-all cursor-pointer text-sm ${
+                  isActive
+                    ? 'border-[#4A8DF0] text-[#1B2A41] bg-white shadow-xs'
+                    : isDone
+                    ? 'border-[#DCE6F5] text-[#1B2A41] bg-white'
+                    : 'border-[#DCE6F5] text-[#5F6B7D] bg-white'
+                }`}
+              >
+                <b
+                  className={`w-6.5 h-6.5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                    isDone
+                      ? 'bg-[#1FA67A] text-white'
+                      : isActive
+                      ? 'bg-[#2F67BB] text-white'
+                      : 'bg-[#EAF2FE] text-[#2F67BB]'
+                  }`}
+                >
+                  {isDone ? '✓' : i + 1}
+                </b>
+                <span>{name}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-            {/* Nama Perusahaan (Teks Bebas) */}
-            <div>
-              <label className="block text-sm font-bold text-[#1B2A41] mb-1.5">
-                Nama Perusahaan yang Dilamar
-              </label>
-              <input
-                type="text"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="Contoh: BCA, GoTo, Shopee, Telkom, Mandiri, dll."
-                className="w-full px-4 py-3 rounded-2xl border border-slate-300 focus:border-[#4A8DF0] focus:ring-2 focus:ring-[#4A8DF0]/20 text-sm sm:text-base font-medium transition-all"
-                required
-              />
+        {/* Form Panel Container */}
+        <div className="max-w-[760px] mx-auto">
+          <section className="bg-white border border-[#DCE6F5] rounded-[20px] p-6 sm:p-7 shadow-xs">
+            {/* Step 0: Target */}
+            {cur === 0 && (
+              <div className="animate-in fade-in-50 duration-200">
+                <h2 className="font-fraunces text-2xl font-bold text-[#1B2A41] mb-1">
+                  Kamu melamar ke mana?
+                </h2>
+                <p className="text-[#5F6B7D] text-sm mb-5.5">
+                  Pewawancara akan menyesuaikan pertanyaan dengan posisi ini.
+                </p>
 
-              {/* Quick Suggestion Chips */}
-              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-slate-400 font-medium">Contoh populer:</span>
-                {popularCompanies.map((comp) => (
+                {/* Modes radiogroup */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5.5" role="radiogroup" aria-label="Jenis wawancara">
                   <button
-                    key={comp}
                     type="button"
-                    onClick={() => setCompanyName(comp)}
-                    className="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-[#EAF2FE] hover:text-[#2F67BB] text-slate-700 transition-colors"
-                  >
-                    {comp}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Posisi yang Dilamar */}
-            <div>
-              <label className="block text-sm font-bold text-[#1B2A41] mb-1.5">
-                Posisi / Role yang Dituju
-              </label>
-              <input
-                type="text"
-                value={targetRole}
-                onChange={(e) => setTargetRole(e.target.value)}
-                placeholder="Contoh: Junior Frontend Developer, ODP, Product Associate"
-                className="w-full px-4 py-3 rounded-2xl border border-slate-300 focus:border-[#4A8DF0] focus:ring-2 focus:ring-[#4A8DF0]/20 text-sm sm:text-base font-medium transition-all"
-                required
-              />
-            </div>
-
-            {/* Tingkat Pengalaman / Level */}
-            <div>
-              <label className="block text-sm font-bold text-[#1B2A41] mb-2 flex items-center gap-1.5">
-                <GraduationCap className="w-4 h-4 text-[#2F67BB]" />
-                Tingkat Pengalaman (Level)
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  { id: 'magang', label: 'Magang (Internship)', desc: 'Untuk mahasiswa aktif mencari pengalaman awal' },
-                  { id: 'fresh_graduate', label: 'Fresh Graduate', desc: 'Lulusan baru (0 - 1 tahun pengalaman)' },
-                  { id: 'junior', label: 'Junior Staff', desc: '1 - 2 tahun pengalaman kerja relevan' },
-                ].map((lvl) => (
-                  <button
-                    key={lvl.id}
-                    type="button"
-                    onClick={() => setLevel(lvl.id as CandidateLevel)}
-                    className={`p-4 rounded-2xl border text-left transition-all ${
-                      level === lvl.id
-                        ? 'border-[#4A8DF0] bg-[#EAF2FE] ring-2 ring-[#4A8DF0]/30'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    role="radio"
+                    aria-checked={mode === 'HRD'}
+                    onClick={() => setMode('HRD')}
+                    className={`border-2 rounded-2xl p-4 cursor-pointer text-left transition-all ${
+                      mode === 'HRD'
+                        ? 'border-[#4A8DF0] bg-[#EAF2FE]'
+                        : 'border-[#DCE6F5] bg-transparent hover:border-[#4A8DF0]/50'
                     }`}
                   >
-                    <div className="font-bold text-sm text-[#1B2A41]">{lvl.label}</div>
-                    <div className="text-xs text-slate-500 mt-1">{lvl.desc}</div>
+                    <strong className="block text-[17px] text-[#1B2A41]">Wawancara HRD</strong>
+                    <span className="text-sm text-[#5F6B7D]">Perkenalan, motivasi, dan pengalamanmu</span>
                   </button>
-                ))}
-              </div>
-            </div>
-          </div>
 
-          {/* Card 2: Pengaturan Sesi & Gaya Pewawancara */}
-          <div className="rounded-3xl bg-white border border-[#2F67BB]/15 p-6 sm:p-8 shadow-xs space-y-6">
-            <h2 className="text-lg font-bold text-[#1B2A41] flex items-center gap-2 pb-3 border-b border-slate-100">
-              <UserCheck className="w-5 h-5 text-[#F26A2B]" />
-              2. Karakteristik Pewawancara & Sesi
-            </h2>
-
-            {/* Gaya Pewawancara */}
-            <div>
-              <label className="block text-sm font-bold text-[#1B2A41] mb-2">
-                Gaya Pewawancara AI
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  {
-                    id: 'ramah',
-                    name: 'Ramah & Mengayomi',
-                    tag: 'Cocok untuk Pemula',
-                    desc: 'Nada bicara hangat, memotivasi, dan fokus membangun rasa percaya diri.',
-                  },
-                  {
-                    id: 'tegas',
-                    name: 'Tegas & Terstruktur',
-                    tag: 'Standar Korporat',
-                    desc: 'Pertanyaan lugas, efisien waktu, dan langsung menilai substansi STAR.',
-                  },
-                  {
-                    id: 'stress',
-                    name: 'Stress Interview',
-                    tag: 'Uji Mental & Tekanan',
-                    desc: 'Skeptis, menantang asumsi, dan menguji ketenangan Anda di bawah tekanan.',
-                  },
-                ].map((sty) => (
                   <button
-                    key={sty.id}
                     type="button"
-                    onClick={() => setInterviewerStyle(sty.id as InterviewerStyle)}
-                    className={`p-4 rounded-2xl border text-left transition-all ${
-                      interviewerStyle === sty.id
-                        ? 'border-[#F26A2B] bg-orange-50/50 ring-2 ring-[#F26A2B]/30'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    role="radio"
+                    aria-checked={mode === 'Teknis'}
+                    onClick={() => setMode('Teknis')}
+                    className={`border-2 rounded-2xl p-4 cursor-pointer text-left transition-all ${
+                      mode === 'Teknis'
+                        ? 'border-[#4A8DF0] bg-[#EAF2FE]'
+                        : 'border-[#DCE6F5] bg-transparent hover:border-[#4A8DF0]/50'
                     }`}
                   >
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#F26A2B] block mb-1">
-                      {sty.tag}
-                    </span>
-                    <div className="font-bold text-sm text-[#1B2A41]">{sty.name}</div>
-                    <div className="text-xs text-slate-500 mt-1 leading-relaxed">{sty.desc}</div>
+                    <strong className="block text-[17px] text-[#1B2A41]">Wawancara teknis</strong>
+                    <span className="text-sm text-[#5F6B7D]">Pertanyaan sesuai bidang kerja yang kamu lamar</span>
                   </button>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            {/* Jumlah Pertanyaan & Mode Jawaban */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
-              {/* Jumlah Pertanyaan */}
-              <div>
-                <label className="block text-sm font-bold text-[#1B2A41] mb-2">
-                  Jumlah Pertanyaan
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[5, 8, 10].map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() => setQuestionCount(num as QuestionCount)}
-                      className={`py-3 rounded-xl border text-center font-bold text-sm transition-all ${
-                        questionCount === num
-                          ? 'border-[#4A8DF0] bg-[#4A8DF0] text-white shadow-xs'
-                          : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                {/* Company & Role inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5.5">
+                  <div>
+                    <label className="block font-semibold text-sm mb-1.5 text-[#1B2A41]" htmlFor="co">
+                      Nama perusahaan
+                    </label>
+                    <input
+                      id="co"
+                      value={company}
+                      onChange={(e) => {
+                        setCompany(e.target.value);
+                        if (e.target.value.trim()) setCoError('');
+                      }}
+                      placeholder="Contoh: Bank Mandiri"
+                      autoComplete="off"
+                      className={`w-full border rounded-xl px-3.5 py-3 min-h-[48px] bg-[#F6F9FE] text-base text-[#1B2A41] placeholder-[#5F6B7D]/60 focus:outline-hidden focus:border-[#4A8DF0] transition-colors ${
+                        coError ? 'border-[#C73B2B]' : 'border-[#DCE6F5]'
                       }`}
+                    />
+                    <p className="text-[#C73B2B] text-xs min-h-[20px] mt-1">{coError}</p>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-sm mb-1.5 text-[#1B2A41]" htmlFor="po">
+                      Posisi yang dilamar
+                    </label>
+                    <input
+                      id="po"
+                      value={position}
+                      onChange={(e) => {
+                        setPosition(e.target.value);
+                        if (e.target.value.trim()) setPoError('');
+                      }}
+                      placeholder="Contoh: Junior Web Developer"
+                      autoComplete="off"
+                      className={`w-full border rounded-xl px-3.5 py-3 min-h-[48px] bg-[#F6F9FE] text-base text-[#1B2A41] placeholder-[#5F6B7D]/60 focus:outline-hidden focus:border-[#4A8DF0] transition-colors ${
+                        poError ? 'border-[#C73B2B]' : 'border-[#DCE6F5]'
+                      }`}
+                    />
+                    <p className="text-[#C73B2B] text-xs min-h-[20px] mt-1">{poError}</p>
+                  </div>
+                </div>
+
+                {/* Level pengalaman */}
+                <div className="mb-5.5">
+                  <span className="block font-semibold text-sm mb-2 text-[#1B2A41]">
+                    Level pengalaman
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {(['Magang', 'Fresh graduate', 'Junior'] as const).map((lvl) => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        aria-pressed={level === lvl}
+                        onClick={() => setLevel(lvl)}
+                        className={`border rounded-full px-4 py-2 font-semibold text-sm cursor-pointer transition-all ${
+                          level === lvl
+                            ? 'bg-[#2F67BB] border-[#2F67BB] text-white shadow-xs'
+                            : 'border-[#DCE6F5] bg-[#F6F9FE] text-[#1B2A41] hover:border-[#4A8DF0]'
+                        }`}
+                      >
+                        {lvl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick preset chips */}
+                <div>
+                  <span className="block font-semibold text-sm mb-2 text-[#1B2A41]">
+                    Belum tahu mau coba apa?
+                  </span>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => applyQuickPreset('GoTo', 'Frontend Developer')}
+                      className="border border-dashed border-[#4A8DF0] bg-transparent text-[#2F67BB] hover:bg-[#EAF2FE] rounded-full px-3.5 py-1.5 font-semibold text-sm cursor-pointer transition-colors"
                     >
-                      {num} Soal
+                      Frontend Developer di GoTo
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => applyQuickPreset('Bank BCA', 'IT Trainee')}
+                      className="border border-dashed border-[#4A8DF0] bg-transparent text-[#2F67BB] hover:bg-[#EAF2FE] rounded-full px-3.5 py-1.5 font-semibold text-sm cursor-pointer transition-colors"
+                    >
+                      IT Trainee di Bank BCA
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyQuickPreset('Bank Mandiri', 'Management Trainee')}
+                      className="border border-dashed border-[#4A8DF0] bg-transparent text-[#2F67BB] hover:bg-[#EAF2FE] rounded-full px-3.5 py-1.5 font-semibold text-sm cursor-pointer transition-colors"
+                    >
+                      Management Trainee di Bank Mandiri
+                    </button>
+                  </div>
                 </div>
-                <span className="text-xs text-slate-400 mt-1.5 block">
-                  Estimasi durasi: ~{questionCount * 2} menit latihan.
-                </span>
               </div>
+            )}
 
-              {/* Mode Jawaban */}
-              <div>
-                <label className="block text-sm font-bold text-[#1B2A41] mb-2">
-                  Mode Jawaban Utama
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAnswerMode('suara')}
-                    className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold transition-all ${
-                      answerMode === 'suara'
-                        ? 'border-[#2F67BB] bg-[#EAF2FE] text-[#2F67BB]'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+            {/* Step 1: Lowongan dan CV */}
+            {cur === 1 && (
+              <div className="animate-in fade-in-50 duration-200">
+                <h2 className="font-fraunces text-2xl font-bold text-[#1B2A41] mb-1">
+                  Lowongan dan CV
+                </h2>
+                <p className="text-[#5F6B7D] text-sm mb-5.5">
+                  Dengan dua data ini, pewawancara bertanya dari lowongan yang kamu lamar dan pengalaman yang kamu tulis.
+                </p>
+
+                <div className="mb-5.5">
+                  <label className="block font-semibold text-sm mb-1.5 text-[#1B2A41]" htmlFor="jd">
+                    Deskripsi pekerjaan (wajib)
+                  </label>
+                  <textarea
+                    id="jd"
+                    rows={6}
+                    value={jobDescription}
+                    onChange={(e) => {
+                      setJobDescription(e.target.value);
+                      if (e.target.value.trim()) setJdError('');
+                    }}
+                    placeholder="Salin tanggung jawab dan kualifikasi dari lowongan"
+                    className={`w-full border rounded-xl p-3.5 bg-[#F6F9FE] text-base text-[#1B2A41] placeholder-[#5F6B7D]/60 focus:outline-hidden focus:border-[#4A8DF0] resize-y min-h-[120px] transition-colors ${
+                      jdError ? 'border-[#C73B2B]' : 'border-[#DCE6F5]'
+                    }`}
+                  />
+                  <p className="text-[#C73B2B] text-xs min-h-[20px] mt-1">{jdError}</p>
+                </div>
+
+                <div className="mb-2">
+                  <label className="block font-semibold text-sm mb-1.5 text-[#1B2A41]" htmlFor="cvt">
+                    Isi CV: pengalaman kerja dan organisasi
+                  </label>
+
+                  <label
+                    htmlFor="cv-upload"
+                    className="block border-2 border-dashed border-[#4A8DF0] rounded-2xl p-4 text-center cursor-pointer mb-2.5 bg-[#EAF2FE] text-[#2F67BB] font-semibold transition-colors hover:bg-[#dce9fc]"
+                  >
+                    <span className="block">{cvLabel}</span>
+                    <small className="block text-[#5F6B7D] font-normal text-xs mt-0.5">
+                      Teksnya otomatis masuk ke kolom di bawah
+                    </small>
+                  </label>
+
+                  <input
+                    id="cv-upload"
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.txt,application/pdf,text/plain"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+
+                  <textarea
+                    id="cvt"
+                    rows={6}
+                    value={cvText}
+                    onChange={(e) => setCvText(e.target.value)}
+                    placeholder="Atau tempel teks CV-mu di sini: pendidikan, keahlian, pengalaman, organisasi"
+                    className="w-full border border-[#DCE6F5] rounded-xl p-3.5 bg-[#F6F9FE] text-base text-[#1B2A41] placeholder-[#5F6B7D]/60 focus:outline-hidden focus:border-[#4A8DF0] resize-y min-h-[120px] transition-colors"
+                  />
+                  <p className="text-[#5F6B7D] text-xs min-h-[20px] mt-1">{cvNote}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Suasana */}
+            {cur === 2 && (
+              <div className="animate-in fade-in-50 duration-200">
+                <h2 className="font-fraunces text-2xl font-bold text-[#1B2A41] mb-1">
+                  Atur suasana wawancara
+                </h2>
+                <p className="text-[#5F6B7D] text-sm mb-5.5">
+                  Semua pilihan ini bisa kamu biarkan seperti semula.
+                </p>
+
+                {/* Gaya pewawancara */}
+                <div className="mb-5.5">
+                  <span className="block font-semibold text-sm mb-2 text-[#1B2A41]">
+                    Gaya pewawancara
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {(['Ramah', 'Tegas', 'Menantang'] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        aria-pressed={style === s}
+                        onClick={() => setStyle(s)}
+                        className={`border rounded-full px-4 py-2 font-semibold text-sm cursor-pointer transition-all ${
+                          style === s
+                            ? 'bg-[#2F67BB] border-[#2F67BB] text-white shadow-xs'
+                            : 'border-[#DCE6F5] bg-[#F6F9FE] text-[#1B2A41] hover:border-[#4A8DF0]'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Jumlah pertanyaan */}
+                <div className="mb-2">
+                  <span className="block font-semibold text-sm mb-2 text-[#1B2A41]">
+                    Jumlah pertanyaan
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {([5, 8, 10] as const).map((count) => (
+                      <button
+                        key={count}
+                        type="button"
+                        aria-pressed={questionCount === count}
+                        onClick={() => setQuestionCount(count)}
+                        className={`border rounded-full px-4 py-2 font-semibold text-sm cursor-pointer transition-all ${
+                          questionCount === count
+                            ? 'bg-[#2F67BB] border-[#2F67BB] text-white shadow-xs'
+                            : 'border-[#DCE6F5] bg-[#F6F9FE] text-[#1B2A41] hover:border-[#4A8DF0]'
+                        }`}
+                      >
+                        {count}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Cek perangkat */}
+            {cur === 3 && (
+              <div className="animate-in fade-in-50 duration-200">
+                <h2 className="font-fraunces text-2xl font-bold text-[#1B2A41] mb-1">
+                  Cek mikrofon dan kamera
+                </h2>
+                <p className="text-[#5F6B7D] text-sm mb-5.5">
+                  Kamera hanya untuk pratinjau dan tidak direkam.
+                </p>
+
+                {/* Check Mikrofon */}
+                <div className="flex items-center gap-3.5 border border-[#DCE6F5] rounded-2xl p-4 mb-3 bg-white">
+                  <div className="flex-1">
+                    <strong className="block text-sm font-bold text-[#1B2A41]">Mikrofon</strong>
+                    <small className="text-[#5F6B7D] text-xs block">Dipakai untuk menjawab dengan suara</small>
+                  </div>
+                  <span
+                    className={`font-bold text-xs sm:text-sm ${
+                      micStatus === 'ok'
+                        ? 'text-[#1FA67A]'
+                        : micStatus === 'no'
+                        ? 'text-[#C73B2B]'
+                        : 'text-[#5F6B7D]'
                     }`}
                   >
-                    <Mic className="w-4 h-4 text-[#F26A2B]" />
-                    Suara (Speech)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAnswerMode('ketik')}
-                    className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold transition-all ${
-                      answerMode === 'ketik'
-                        ? 'border-[#2F67BB] bg-[#EAF2FE] text-[#2F67BB]'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Keyboard className="w-4 h-4 text-[#4A8DF0]" />
-                    Ketik Teks
-                  </button>
-                </div>
-                <span className="text-xs text-slate-400 mt-1.5 block">
-                  Anda tetap bisa beralih ketik jika lingkungan bising.
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Kartu "Sebelum Mulai" (Cek Perangkat, Tips STAR, Estimasi Waktu) */}
-          <div className="rounded-3xl bg-gradient-to-br from-white to-[#EAF2FE]/60 border border-[#4A8DF0]/30 p-6 sm:p-8 shadow-sm space-y-6">
-            <h2 className="text-lg font-bold text-[#1B2A41] flex items-center gap-2 pb-3 border-b border-[#4A8DF0]/20">
-              <Sparkles className="w-5 h-5 text-[#FFC857]" />
-              3. Sebelum Mulai: Panduan & Pengujian Perangkat
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Uji Mikrofon & Kamera */}
-              <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#1B2A41] uppercase tracking-wider">
-                    Izin Mikrofon & Kamera
+                    {micMessage}
                   </span>
                   <button
                     type="button"
-                    onClick={handleTestHardware}
-                    disabled={micStatus === 'checking'}
-                    className="text-xs font-bold text-[#4A8DF0] hover:underline"
+                    onClick={handleTestMic}
+                    className="border border-[#4A8DF0] bg-transparent text-[#2F67BB] rounded-xl px-4 py-2 font-semibold text-sm cursor-pointer transition-colors hover:bg-[#EAF2FE]"
                   >
-                    {micStatus === 'checking' ? 'Memeriksa...' : 'Uji Sekarang'}
+                    Tes
                   </button>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50">
-                    <span className="flex items-center gap-2 text-slate-700">
-                      <Mic className="w-4 h-4 text-[#2F67BB]" />
-                      Mikrofon
-                    </span>
-                    {micStatus === 'granted' ? (
-                      <span className="text-emerald-600 font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Siap Digunakan
-                      </span>
-                    ) : micStatus === 'denied' ? (
-                      <span className="text-rose-600 font-medium">Izin Belum Diberikan</span>
-                    ) : (
-                      <span className="text-slate-400">Belum diuji</span>
-                    )}
+                {/* Check Kamera */}
+                <div className="flex items-center gap-3.5 border border-[#DCE6F5] rounded-2xl p-4 mb-5.5 bg-white">
+                  <div className="flex-1">
+                    <strong className="block text-sm font-bold text-[#1B2A41]">Kamera</strong>
+                    <small className="text-[#5F6B7D] text-xs block">Agar terasa seperti wawancara sungguhan</small>
+                  </div>
+                  <span
+                    className={`font-bold text-xs sm:text-sm ${
+                      camStatus === 'ok'
+                        ? 'text-[#1FA67A]'
+                        : camStatus === 'no'
+                        ? 'text-[#C73B2B]'
+                        : 'text-[#5F6B7D]'
+                    }`}
+                  >
+                    {camMessage}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleTestCam}
+                    className="border border-[#4A8DF0] bg-transparent text-[#2F67BB] rounded-xl px-4 py-2 font-semibold text-sm cursor-pointer transition-colors hover:bg-[#EAF2FE]"
+                  >
+                    Tes
+                  </button>
+                </div>
+
+                {/* Cara Menjawab */}
+                <div className="mb-3">
+                  <span className="block font-semibold text-sm mb-2 text-[#1B2A41]">
+                    Cara menjawab
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={ansVoice}
+                      onClick={toggleVoice}
+                      className={`border rounded-full px-4 py-2 font-semibold text-sm cursor-pointer transition-all ${
+                        ansVoice
+                          ? 'bg-[#2F67BB] border-[#2F67BB] text-white shadow-xs'
+                          : 'border-[#DCE6F5] bg-[#F6F9FE] text-[#1B2A41] hover:border-[#4A8DF0]'
+                      }`}
+                    >
+                      Dengan suara
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={ansType}
+                      onClick={toggleType}
+                      className={`border rounded-full px-4 py-2 font-semibold text-sm cursor-pointer transition-all ${
+                        ansType
+                          ? 'bg-[#2F67BB] border-[#2F67BB] text-white shadow-xs'
+                          : 'border-[#DCE6F5] bg-[#F6F9FE] text-[#1B2A41] hover:border-[#4A8DF0]'
+                      }`}
+                    >
+                      Dengan mengetik
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[#5F6B7D] text-xs leading-relaxed">
+                  Dua-duanya aktif secara bawaan: kamu bisa bicara lalu merapikan jawaban lewat ketikan. Tekan salah satu untuk mematikannya (minimal satu harus aktif). Tidak punya mikrofon? Cukup biarkan mengetik saja yang aktif.
+                </p>
+              </div>
+            )}
+
+            {/* Step 4: Ringkasan sesi */}
+            {cur === 4 && (
+              <div className="animate-in fade-in-50 duration-200" aria-live="polite">
+                <h2 className="font-fraunces text-2xl font-bold text-[#1B2A41] mb-1">
+                  Ringkasan sesi
+                </h2>
+                <p className="text-[#5F6B7D] text-sm mb-5.5">
+                  Periksa dulu sebelum mulai. Kalau ada yang ingin diubah, tekan Ubah di barisnya.
+                </p>
+
+                {/* Summary Table Card */}
+                <div className="bg-[#EAF2FE] rounded-2xl px-5 py-2 mb-2">
+                  <div className="grid grid-cols-[minmax(110px,180px)_1fr_auto] gap-3 items-center py-3 border-b border-[#DCE6F5]">
+                    <span className="text-[#5F6B7D] text-sm">Jenis wawancara</span>
+                    <b className="font-semibold text-sm text-[#1B2A41]">
+                      {mode === 'HRD' ? 'Wawancara HRD' : 'Wawancara teknis'}
+                    </b>
+                    <button
+                      type="button"
+                      onClick={() => goToStep(0)}
+                      className="text-[#2F67BB] font-semibold text-sm cursor-pointer px-1 hover:underline"
+                    >
+                      Ubah
+                    </button>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50">
-                    <span className="flex items-center gap-2 text-slate-700">
-                      <Video className="w-4 h-4 text-[#4A8DF0]" />
-                      Kamera (Lokal & Pribadi)
-                    </span>
-                    {camStatus === 'granted' ? (
-                      <span className="text-emerald-600 font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Siap Digunakan
-                      </span>
-                    ) : camStatus === 'denied' ? (
-                      <span className="text-rose-600 font-medium">Izin Belum Diberikan</span>
-                    ) : (
-                      <span className="text-slate-400">Belum diuji</span>
-                    )}
+                  <div className="grid grid-cols-[minmax(110px,180px)_1fr_auto] gap-3 items-center py-3 border-b border-[#DCE6F5]">
+                    <span className="text-[#5F6B7D] text-sm">Perusahaan dan posisi</span>
+                    <b className="font-semibold text-sm text-[#1B2A41]">
+                      {position || company ? `${position || '...'} di ${company || '...'}` : 'Belum diisi'}
+                    </b>
+                    <button
+                      type="button"
+                      onClick={() => goToStep(0)}
+                      className="text-[#2F67BB] font-semibold text-sm cursor-pointer px-1 hover:underline"
+                    >
+                      Ubah
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-[minmax(110px,180px)_1fr_auto] gap-3 items-center py-3 border-b border-[#DCE6F5]">
+                    <span className="text-[#5F6B7D] text-sm">Level</span>
+                    <b className="font-semibold text-sm text-[#1B2A41]">{level}</b>
+                    <button
+                      type="button"
+                      onClick={() => goToStep(0)}
+                      className="text-[#2F67BB] font-semibold text-sm cursor-pointer px-1 hover:underline"
+                    >
+                      Ubah
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-[minmax(110px,180px)_1fr_auto] gap-3 items-center py-3 border-b border-[#DCE6F5]">
+                    <span className="text-[#5F6B7D] text-sm">Lowongan dan CV</span>
+                    <b className="font-semibold text-sm text-[#1B2A41]">
+                      {[
+                        jobDescription.trim() ? 'Lowongan terisi' : 'Lowongan belum diisi',
+                        cvText.trim() ? 'CV terisi' : 'CV belum diisi',
+                      ].join(', ')}
+                    </b>
+                    <button
+                      type="button"
+                      onClick={() => goToStep(1)}
+                      className="text-[#2F67BB] font-semibold text-sm cursor-pointer px-1 hover:underline"
+                    >
+                      Ubah
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-[minmax(110px,180px)_1fr_auto] gap-3 items-center py-3 border-b border-[#DCE6F5]">
+                    <span className="text-[#5F6B7D] text-sm">Suasana</span>
+                    <b className="font-semibold text-sm text-[#1B2A41]">
+                      {style}, {questionCount} pertanyaan
+                    </b>
+                    <button
+                      type="button"
+                      onClick={() => goToStep(2)}
+                      className="text-[#2F67BB] font-semibold text-sm cursor-pointer px-1 hover:underline"
+                    >
+                      Ubah
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-[minmax(110px,180px)_1fr_auto] gap-3 items-center py-3 border-b border-[#DCE6F5]">
+                    <span className="text-[#5F6B7D] text-sm">Cara menjawab</span>
+                    <b className="font-semibold text-sm text-[#1B2A41]">{getAnswerModeText()}</b>
+                    <button
+                      type="button"
+                      onClick={() => goToStep(3)}
+                      className="text-[#2F67BB] font-semibold text-sm cursor-pointer px-1 hover:underline"
+                    >
+                      Ubah
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-[minmax(110px,180px)_1fr_auto] gap-3 items-center py-3">
+                    <span className="text-[#5F6B7D] text-sm">Perkiraan durasi</span>
+                    <b className="font-semibold text-sm text-[#1B2A41]">
+                      sekitar {Math.round(questionCount * 1.9)} menit
+                    </b>
+                    <span />
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Kamera hanya ditampilkan di browser Anda, tidak direkam.</span>
-                </div>
+                {/* What candidate gets */}
+                <ul className="list-disc pl-5 mt-4 text-[#5F6B7D] text-sm space-y-1">
+                  <li>Nilai untuk setiap jawabanmu</li>
+                  <li>Penanda metode STAR</li>
+                  <li>Contoh jawaban yang lebih baik</li>
+                </ul>
               </div>
+            )}
 
-              {/* Tips Singkat Metode STAR & Durasi */}
-              <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
-                <div className="text-xs font-bold text-[#1B2A41] uppercase tracking-wider flex items-center gap-1.5">
-                  <Lightbulb className="w-4 h-4 text-[#FFC857]" />
-                  Tips Menjawab Metode STAR
-                </div>
-                <div className="text-xs text-slate-600 space-y-1.5 leading-relaxed">
-                  <p>
-                    <strong className="text-[#1B2A41]">S (Situation):</strong> Jelaskan latar belakang situasi atau proyek.
-                  </p>
-                  <p>
-                    <strong className="text-[#1B2A41]">T (Task):</strong> Sebutkan tugas dan tanggung jawab spesifik Anda.
-                  </p>
-                  <p>
-                    <strong className="text-[#1B2A41]">A (Action):</strong> Paparkan langkah nyata & solusi inisiatif Anda.
-                  </p>
-                  <p>
-                    <strong className="text-[#1B2A41]">R (Result):</strong> Ungkapkan hasil akhir dengan angka terukur.
-                  </p>
-                </div>
-                <div className="pt-2 border-t border-slate-100 flex items-center gap-2 text-xs font-semibold text-[#2F67BB]">
-                  <Clock className="w-4 h-4 text-[#F26A2B]" />
-                  Perkiraan Durasi Sesi: {questionCount * 2} Menit
-                </div>
-              </div>
+            {/* Bottom Navigation */}
+            <div className="flex justify-between gap-3 mt-6 pt-4 border-t border-[#DCE6F5]/50">
+              <button
+                type="button"
+                onClick={() => goToStep(cur - 1)}
+                className={`border border-[#DCE6F5] bg-transparent text-[#1B2A41] rounded-2xl px-6 py-3 font-bold text-sm min-h-[48px] cursor-pointer transition-colors hover:bg-slate-50 ${
+                  cur === 0 ? 'invisible' : 'visible'
+                }`}
+              >
+                Kembali
+              </button>
+
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  if (cur < 4) {
+                    goToStep(cur + 1);
+                  } else {
+                    handleStartInterview();
+                  }
+                }}
+                className="bg-[#F26A2B] hover:bg-[#D9561A] text-white rounded-2xl px-6 py-3 font-bold text-sm min-h-[48px] cursor-pointer shadow-sm transition-all active:scale-98 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Mempersiapkan...</span>
+                  </>
+                ) : cur === 4 ? (
+                  'Mulai wawancara'
+                ) : (
+                  'Lanjut'
+                )}
+              </button>
             </div>
-          </div>
-
-          {/* Tombol Mulai Wawancara (Submit) */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4">
-            <span className="text-xs text-slate-500 text-center sm:text-left">
-              Menekan tombol ini akan menggunakan 1 saldo sesi latihan Anda.
-            </span>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-[#F26A2B] hover:bg-[#d95316] text-white font-extrabold text-base sm:text-lg flex items-center justify-center gap-3 shadow-xl shadow-[#F26A2B]/30 hover:scale-102 transition-all active:scale-98 disabled:opacity-50"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Mempersiapkan Pewawancara AI...</span>
-                </>
-              ) : (
-                <>
-                  <span>Mulai Wawancara Sekarang</span>
-                  <ArrowRight className="w-5 h-5" />
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+          </section>
+        </div>
       </main>
     </div>
   );

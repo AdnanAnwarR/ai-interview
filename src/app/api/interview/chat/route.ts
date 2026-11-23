@@ -22,13 +22,24 @@ function checkIsClosingStatement(text: string): boolean {
   const closingKeywords = [
     'telah berakhir',
     'saya akhiri',
+    'kami akhiri',
     'resmi ditutup',
+    'telah resmi ditutup',
     'tidak akan dilanjutkan',
+    'tidak dapat dilanjutkan',
     'telah selesai',
+    'sudah selesai',
+    'selesai sampai di sini',
     'mari kita lihat evaluasi',
+    'melihat hasil evaluasi',
     'hasil evaluasi wawancara',
     'cukupkan sampai di sini',
-    'seluruh rangkaian sesi wawancara telah selesai',
+    'seluruh rangkaian sesi wawancara',
+    'sesi wawancara berakhir',
+    'wawancara telah rampung',
+    'terima kasih atas kehadiran dan waktu',
+    'terima kasih atas waktunya',
+    'proses wawancara telah',
   ];
   return closingKeywords.some((keyword) => lower.includes(keyword));
 }
@@ -82,7 +93,7 @@ export async function POST(req: NextRequest) {
     ).length;
 
     if (containsProfanity) {
-      if (profanityCount >= 2) {
+      if (profanityCount >= 2 || /\b(bego|tolol|goblok|anjing|bangsat|kontol)\b/i.test(lastUserText)) {
         // Immediate termination due to persistent violation
         return NextResponse.json({
           reply: `Penggunaan bahasa kasar yang berulang tidak dapat ditoleransi dalam standar profesionalisme ${company}. Sesi wawancara ini resmi saya akhiri di sini. Terima kasih atas waktunya.`,
@@ -97,7 +108,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Detect User explicitly asking to end or "akhiri"
-    if (/\b(akhiri|keluar|stop|selesai|tutup panggilan|sudahi)\b/i.test(lastUserText)) {
+    if (/\b(akhiri|keluar|stop|selesai|tutup panggilan|sudahi|mana katanya akhiri)\b/i.test(lastUserText)) {
       return NextResponse.json({
         reply: `Baik ${profile.name}, sesuai permintaan Anda, sesi wawancara ini kami akhiri sekarang. Terima kasih atas partisipasi Anda, mari kita langsung lihat hasil evaluasinya.`,
         isFinished: true,

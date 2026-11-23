@@ -4,7 +4,33 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
 
 ---
 
-## [2026-10-05 20:54] - Inisialisasi Fondasi Proyek & Arsitektur Utama
+## [2026-11-23 13:12] - Redesign Form Persiapan (UI Baru 5-Langkah), Perbaikan Pesan Double & Auto-Finish Panggilan
+
+### 1. Implementasi Tampilan Baru Layar Persiapan Wawancara (Sesuai Mockup HTML Pengguna)
+- Diimplementasikan di [SetupForm.tsx](file:///c:/projek%20techno/projek/src/components/PreInterview/SetupForm.tsx) dan [src/app/interview/new/page.tsx](file:///c:/projek%20techno/projek/src/app/interview/new/page.tsx):
+  - **Header Brand Wawancarain:** Logo SVG kustom (rounded blue square + bubble + W oranye) dengan tipografi *Fraunces* dan badge kuota sesi gratis.
+  - **5 Langkah Persiapan Terstruktur:**
+    1. **Target:** Pilihan radio card *Wawancara HRD* vs *Wawancara teknis*, input nama perusahaan & posisi, level pengalaman (*Magang*, *Fresh graduate*, *Junior*), serta quick suggestion chips (*GoTo*, *Bank BCA*, *Bank Mandiri*).
+    2. **Lowongan dan CV:** Textarea deskripsi pekerjaan wajib, file dropzone untuk upload CV (.pdf / .txt) dengan ekstraksi teks otomatis, serta textarea paste manual.
+    3. **Suasana:** Gaya pewawancara (*Ramah*, *Tegas*, *Menantang*) dan jumlah pertanyaan (5, 8, 10).
+    4. **Cek perangkat:** Pengujian izin browser mikrofon dan kamera secara langsung (*getUserMedia*) dengan indikator status (*Siap* / *Izin ditolak*), serta toggle cara menjawab (*Dengan suara*, *Dengan mengetik*).
+    5. **Ringkasan:** Kartu rincian sesi dengan tombol *Ubah* langsung ke langkah terkait, estimasi durasi, dan daftar manfaat evaluasi STAR.
+  - **Font & Styling:** Mengintegrasikan Google Fonts `Fraunces` dan `Plus Jakarta Sans`, variabel warna hangat Wawancarain (`#2F67BB`, `#4A8DF0`, `#F26A2B`, `#EAF2FE`, `#1B2A41`).
+
+### 2. Perbaikan Bug Pesan AI Double (Terkirim 2x)
+- **Penyebab:** Pada React StrictMode, pemanggilan `setTimeout(() => requestAiResponse, 0)` di dalam updater `setMessages(prev => ...)` dieksekusi 2x oleh React dev server sebelum flag status *in-flight* terkunci.
+- **Solusi di [InterviewRoom.tsx](file:///c:/projek%20techno/projek/src/components/LiveSession/InterviewRoom.tsx):**
+  - Mengunci status `isRequestInProgressRef.current = true` secara sinkron langsung saat tombol kirim ditekan.
+  - Menghapus pemanggilan `setTimeout` dari dalam `setMessages`.
+  - Menerapkan deduplikasi ketat: pesan AI dengan teks identik berturut-turut diabaikan sehingga tidak akan pernah muncul ganda.
+
+### 3. Perbaikan Panggilan Otomatis Menutup Saat Wawancara Selesai
+- **Penyebab:** Pada browser Chromium, instance `SpeechSynthesisUtterance` lokal terkena *garbage-collection* mid-speech sehingga event `onend` tidak pernah dipicu, menyebabkan promise TTS menggantung tanpa batas dan mencegah transisi ke halaman hasil.
+- **Solusi:**
+  - Di [speechEngine.ts](file:///c:/projek%20techno/projek/src/lib/audio/speechEngine.ts): Menyimpan `currentUtterance` sebagai properti kelas dan menambahkan timer durasi pengaman (*fallback safety timeout*) agar promise TTS selalu diselesaikan.
+  - Di [InterviewRoom.tsx](file:///c:/projek%20techno/projek/src/components/LiveSession/InterviewRoom.tsx): Ketika `isFinished: true`, status panggilan langsung ditutup (`isClosed = true`, `isEndingCall = true`), mikrofon dihentikan, input teks dan tombol dinonaktifkan, serta transisi ke evaluasi dipastikan berjalan maksimal dalam 4–5 detik.
+  - Di [src/app/api/interview/chat/route.ts](file:///c:/projek%20techno/projek/src/app/api/interview/chat/route.ts): Memperluas deteksi kalimat penutup (`checkIsClosingStatement`) untuk mengenali seluruh variasi kalimat perpisahan pewawancara.
+
 
 ### 1. Inisialisasi Fondasi & Framework
 - Inisialisasi Git repository pada workspace.

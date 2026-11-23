@@ -35,6 +35,7 @@ export class SpeechEngine {
   private shouldBeListening = false;
   private synth: SpeechSynthesis | null = null;
   private indonesianVoice: SpeechSynthesisVoice | null = null;
+  private currentUtterance: SpeechSynthesisUtterance | null = null;
 
   private onInterimCallback: ((text: string) => void) | null = null;
   private onFinalCallback: ((text: string) => void) | null = null;
@@ -198,7 +199,7 @@ export class SpeechEngine {
         setTimeout(() => {
           onEnd?.();
           resolve();
-        }, 1500);
+        }, 1200);
         return;
       }
 
@@ -208,6 +209,8 @@ export class SpeechEngine {
       const cleanText = text.replace(/[*_#`~]/g, '');
 
       const utterance = new SpeechSynthesisUtterance(cleanText);
+      this.currentUtterance = utterance; // Prevent garbage collection bug in Chrome!
+
       if (this.indonesianVoice) {
         utterance.voice = this.indonesianVoice;
       }
@@ -215,22 +218,42 @@ export class SpeechEngine {
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
 
+      let isFinished = false;
+      const complete = () => {
+        if (!isFinished) {
+          isFinished = true;
+          this.currentUtterance = null;
+          onEnd?.();
+          resolve();
+        }
+      };
+
+      // Fallback timer: Chromium speechSynthesis onend can hang indefinitely
+      const safeDuration = Math.min(8000, Math.max(1500, cleanText.length * 75));
+      const fallbackTimer = setTimeout(complete, safeDuration);
+
       utterance.onstart = () => {
         onStart?.();
       };
 
       utterance.onend = () => {
-        onEnd?.();
-        resolve();
+        clearTimeout(fallbackTimer);
+        complete();
       };
 
       utterance.onerror = (e) => {
+        clearTimeout(fallbackTimer);
         console.warn('Speech synthesis error:', e);
-        onEnd?.();
-        resolve();
+        complete();
       };
 
-      this.synth.speak(utterance);
+      try {
+        this.synth.speak(utterance);
+      } catch (e) {
+        console.warn('Speech synthesis speak invocation error:', e);
+        clearTimeout(fallbackTimer);
+        complete();
+      }
     });
   }
 

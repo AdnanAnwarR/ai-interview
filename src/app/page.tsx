@@ -57,7 +57,7 @@ export default function Home() {
     }
   };
 
-  // Step 1: Pre-Interview form submitted -> open Audio Hardware Test
+  // Step 1: Pre-Interview form submitted -> Start Live Interview
   const handleStartHardwareTest = (candidateData: CandidateProfile) => {
     // If free session already used and no paid sessions left -> show paywall
     if (subscription.freeSessionUsed && subscription.sessionsRemaining <= 0) {
@@ -66,7 +66,7 @@ export default function Home() {
     }
 
     setProfile(candidateData);
-    setIsAudioModalOpen(true);
+    setStatus('in_progress');
   };
 
   // Step 2: Audio hardware verified -> Start Live Interview
@@ -152,7 +152,10 @@ export default function Home() {
       <main className="flex-1">
         {/* State 1: Setup Form (Pre-Interview) */}
         {status === 'idle' && (
-          <SetupForm onStartHardwareTest={handleStartHardwareTest} />
+          <SetupForm
+            onStartHardwareTest={handleStartHardwareTest}
+            remainingSessions={subscription.sessionsRemaining}
+          />
         )}
 
         {/* State 2: Live Interview Room */}
