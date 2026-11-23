@@ -24,6 +24,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" async />
       </head>
       <body className="min-h-full flex flex-col bg-[#F6F9FE] text-[#1B2A41]" suppressHydrationWarning>
         {children}

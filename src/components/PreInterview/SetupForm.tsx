@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { CandidateProfile, InterviewMode, ExperienceLevel } from '@/types/interview';
+import { extractCvTextFromFile } from '@/lib/pdfParser';
 
 interface SetupFormProps {
   onStartHardwareTest: (profile: CandidateProfile) => void;
@@ -129,44 +130,17 @@ export const SetupForm: React.FC<SetupFormProps> = ({
 
     setCvFileName(file.name);
     setCvLabel(`Membaca ${file.name}...`);
+    setCvNote('Mengekstrak teks dokumen...');
 
     try {
-      if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-        const text = await file.text();
-        setCvText(text.trim());
+      const result = await extractCvTextFromFile(file);
+      if (result.isExtracted && result.text) {
+        setCvText(result.text);
         setCvLabel(`✓ ${file.name} (klik untuk ganti file)`);
-      } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-        // Coba baca PDF via PDF.js jika ada di window, jika tidak gunakan text reader fallback
-        const win = window as unknown as { pdfjsLib?: { getDocument: (opts: { data: ArrayBuffer }) => { promise: Promise<{ numPages: number; getPage: (i: number) => Promise<{ getTextContent: () => Promise<{ items: Array<{ str: string }> }> }> }> }; GlobalWorkerOptions: { workerSrc: string } } };
-        if (win.pdfjsLib) {
-          win.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-          const buffer = await file.arrayBuffer();
-          const doc = await win.pdfjsLib.getDocument({ data: buffer }).promise;
-          let fullText = '';
-          for (let i = 1; i <= doc.numPages; i++) {
-            const page = await doc.getPage(i);
-            const content = await page.getTextContent();
-            fullText += content.items.map((x) => x.str).join(' ') + '\n';
-          }
-          if (fullText.trim()) {
-            setCvText(fullText.trim());
-            setCvLabel(`✓ ${file.name} (klik untuk ganti file)`);
-            return;
-          }
-        }
-        // Fallback jika pdfjs belum siap
-        const text = await file.text();
-        if (text && text.length > 50) {
-          setCvText(text.slice(0, 4000));
-        } else {
-          setCvText(`[File Terlampir: ${file.name}] Pengalaman kandidat sesuai CV.`);
-        }
-        setCvLabel(`✓ ${file.name} (klik untuk ganti file)`);
+        setCvNote('CV berhasil dibaca. Teks otomatis masuk ke kolom di bawah.');
       } else {
-        const text = await file.text();
-        setCvText(text.trim());
-        setCvLabel(`✓ ${file.name} (klik untuk ganti file)`);
+        setCvLabel(`✓ ${file.name} terpilih`);
+        setCvNote(result.message || 'Teks CV belum bisa dibaca otomatis. Silakan tempel manual di kolom di bawah.');
       }
     } catch {
       setCvLabel(`${file.name} terpilih`);
