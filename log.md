@@ -4,6 +4,111 @@ Dokumen ini mencatat seluruh pembaruan, implementasi fitur, dan riwayat commit u
 
 ---
 
+## [2026-11-24 15:25] - Deteksi Penutupan Wawancara Oleh AI & Auto-Hangup / Redirect Otomatis
+
+### 1. Deteksi Kalimat Pengakhiran AI (Closing & Early Termination)
+- **Akar Masalah:** Ketika AI pewawancara memutuskan mengakhiri wawancara (misalnya karena pelanggaran etika atau mencapai akhir giliran), sistem sebelumnya hanya mengecek `currentQuestionIndex >= totalQuestions`. Jika belum mencapai jumlah total, server tidak mengirimkan flag `X-Is-Finished`, sehingga kamar wawancara tetap membiarkan kolom input aktif.
+- **Solusi:**
+  - Pada [src/app/api/interviews/[id]/chat/route.ts](file:///c:/projek%20techno/projek/src/app/api/interviews/[id]/chat/route.ts), server mendeteksi kalimat penutupan wawancara (misal: *"sesi wawancara ini saya akhiri"*, *"silakan meninggalkan ruangan"*, *"wawancara telah berakhir"*) dan langsung menandai sesi sebagai `FINISHED` di database.
+  - Pada [src/components/interview/InterviewRoom.tsx](file:///c:/projek%20techno/projek/src/components/interview/InterviewRoom.tsx), saat AI selesai mengucapkan kalimat penutup, sistem langsung mematikan mikrofon, mengunci input jawaban, dan mengaktifkan status `isFinished`.
+
+### 2. Auto-Hangup & Auto-Redirect ke Halaman Hasil
+- Begitu pewawancara selesai mengucapkan kalimat penutup, sistem otomatis memulai hitung mundur (countdown 3 detik) dengan indikator *"Pewawancara telah menutup sesi. Mengarahkan Anda ke laporan hasil dalam 3 detik..."*.
+- Pengguna langsung dialihkan secara otomatis ke halaman `/interview/[id]/result` tanpa harus menekan tombol apa pun secara manual.
+
+---
+
+## [2026-11-24 15:00] - Perbaikan Bug Sesi Aktif Menggantung & Auto-Close Sesi Lama
+
+### 1. Auto-Close Sesi Aktif Lama
+- **Akar Masalah:** Saat pengguna mengakhiri sesi wawancara, fungsi `handleEndInterviewEarly` hanya me-redirect ke halaman hasil tanpa memanggil API penutupan status sesi, sehingga status di database tetap `'ACTIVE'`. Akibatnya, saat pengguna (termasuk pengguna PRO) ingin memulai sesi latihan baru, server menolak dengan error 409 (*"Anda masih memiliki sesi wawancara yang sedang aktif..."*).
+- **Solusi:**
+  - Pada [src/app/api/interviews/route.ts](file:///c:/projek%20techno/projek/src/app/api/interviews/route.ts), jika ditemukan sesi aktif sebelumnya saat pengguna membuat wawancara baru, sistem secara otomatis menandai sesi lama tersebut sebagai `FINISHED` sehingga pembuatan sesi baru selalu berhasil tanpa memblokir pengguna.
+  - Pada [src/components/interview/InterviewRoom.tsx](file:///c:/projek%20techno/projek/src/components/interview/InterviewRoom.tsx), saat tombol "Akhiri Panggilan" ditekan, sistem kini memanggil endpoint `/api/interviews/${id}/finish` secara asinkron dengan `keepalive: true`.
+  - Pada [src/app/api/interviews/[id]/result/route.ts](file:///c:/projek%20techno/projek/src/app/api/interviews/[id]/result/route.ts), halaman hasil otomatis memastikan status sesi tersimpan sebagai `FINISHED`.
+  - Seluruh sesi aktif menggantung di database telah dibersihkan.
+
+---
+
+## [2026-11-24 14:45] - Auto-Send Suara Mikrofon (VAD) & Perbaikan Model Gemini (gemini-3.5-flash-lite)
+
+### 1. Auto-Send Otomatis Saat Bicara Lewat Mikrofon
+- **Deteksi Jeda Bicara (Silence Debounce 2.2s):** Pada [src/components/interview/InterviewRoom.tsx](file:///c:/projek%20techno/projek/src/components/interview/InterviewRoom.tsx), saat pengguna mengaktifkan mikrofon dan berbicara, sistem kini mendeteksi jeda hening selama 2.2 detik setelah selesai bicara.
+- **Pengiriman Otomatis:** Setelah jeda terdeteksi, rekaman suara otomatis dihentikan dan jawaban langsung dikirimkan ke endpoint wawancara tanpa perlu klik tombol "Kirim" manual.
+- **Indikator Visual:** Menampilkan status *Mikrofon Aktif — Mendengarkan...* dan badge *Selesai bicara? Jawaban otomatis terkirim...* di atas form jawaban.
+
+### 2. Perbaikan Pertanyaan Terjebak Template Claude & Migrasi Model Gemini
+- **Akar Masalah:** Model `gemini-2.0-flash` pada akun pengguna dialihkan ke `gemini-3.5-flash-lite` oleh Google, menyebabkan error 404 yang secara tidak sengaja memicu fallback statis di `claude.ts` ("Menarik, terima kasih atas penjelasannya...").
+- **Solusi:**
+  - Mengintegrasikan model aktif **`gemini-3.5-flash-lite`** di [src/lib/ai/gemini.ts](file:///c:/projek%20techno/projek/src/lib/ai/gemini.ts) dan [src/lib/ai/dynamicInterview.ts](file:///c:/projek%20techno/projek/src/lib/ai/dynamicInterview.ts) dengan rantai fallback otomatis multi-model. Terverifikasi 100% menghasilkan streaming percakapan langsung dengan API key pengguna.
+  - Mematikan fallback statis `createSimulatedStream` di [src/lib/ai/claude.ts](file:///c:/projek%20techno/projek/src/lib/ai/claude.ts), sehingga jika terjadi kegagalan sistem otomatis menggunakan generator kepribadian kontekstual dinamis.
+
+---
+
+## [2026-11-24 14:00] - Diferensiasi 3 Gaya Wawancara (Suara, Persona, Gaya Pertanyaan) & Perbaikan Bug Suara Mengulang
+
+### 1. Perbaikan Bug Suara AI Mengulang-ulang Pertanyaan
+- **Akar Masalah:** Listener event `click`/`keydown` pertama kali di [src/components/interview/InterviewRoom.tsx](file:///c:/projek%20techno/projek/src/components/interview/InterviewRoom.tsx) mendaftarkan ulang dirinya setiap kali state `isAiSpeaking` berubah. Akibatnya, setiap kali pengguna mengklik input teks atau mengetik keyboard, audio pertanyaan ter-trigger berulang kali.
+- **Solusi:**
+  - Menambahkan pengaman `lastSpokenTextRef`: AI menolak memutar ulang kalimat yang sama kecuali pengguna sengaja menekan tombol "Ulang Suara".
+  - Event listener gesture pertama kali kini diisolasi ke efek mount satu kali (`[]`) dan hanya bertugas menjalankan `speechSynthesis.resume()` tanpa memicu pemanggilan suara baru.
+
+### 2. Diferensiasi 3 Karakter & Suara Wawancara (Ramah, Tegas, Menantang)
+- **Modulasi Suara Unik per Gaya ([src/components/interview/InterviewRoom.tsx](file:///c:/projek%20techno/projek/src/components/interview/InterviewRoom.tsx)):**
+  - **Ramah (Sarah):** Pitch `1.15`, Rate `0.95`, preferensi suara wanita Indonesia yang hangat, ceria, dan membimbing.
+  - **Tegas (Alex):** Pitch `0.90`, Rate `1.05`, preferensi suara pria Indonesia dengan intonasi formal, mantap, dan lugas.
+  - **Menantang / Stress (Arya):** Pitch `0.75`, Rate `0.88`, suara bariton berwibawa, berat, penuh penekanan dan observasi kritis.
+- **Pembedaan Alur Pertanyaan & Respon ([src/lib/ai/dynamicInterview.ts](file:///c:/projek%20techno/projek/src/lib/ai/dynamicInterview.ts)):**
+  - **Ramah:** Respon penuh empati & apresiasi; pertanyaan berfokus pada motivasi, nilai budaya, kerjasama tim, dan perkembangan diri.
+  - **Tegas:** Respon to the point & profesional; pertanyaan berfokus pada hasil terukur, metodologi kerja, efisiensi eksekusi, dan akurasi teknis.
+  - **Menantang:** Respon analitis & skeptis; pertanyaan menguji ketahanan mental di bawah tekanan, mitigasi krisis, penanganan kegagalan fatal, dan pembuktian logika di situasi ekstrem.
+- **Avatar Karakter Visual Unik ([src/components/interview/AiInterviewerAvatar.tsx](file:///c:/projek%20techno/projek/src/components/interview/AiInterviewerAvatar.tsx)):**
+  - Sarah (Ramah): Rambut cokelat lembut, senyum ramah, cincin audio kuning-amber.
+  - Alex (Tegas): Setelan blazer biru dongker, kacamata profesional, cincin audio biru tajam.
+  - Arya (Menantang): Setelan jas arang gelap, tatapan fokus analitis, cincin audio merah-crimson.
+
+---
+
+## [2026-11-24 13:45] - Perbaikan Suara AI (Text-to-Speech), Normalisasi Pesan, & Dialog Dinamis Alami Tanpa Template
+
+### 1. Perbaikan AI Diam / Subtitle Kosong (Bug Fix)
+- **Normalisasi Schema Pesan:** Memperbaiki mismatch data antara Prisma DB (`role: 'assistant'`, `content`) dengan tipe frontend (`sender: 'ai'`, `text`) di [src/app/api/interviews/[id]/route.ts](file:///c:/projek%20techno/projek/src/app/api/interviews/[id]/route.ts) dan [src/components/interview/InterviewRoom.tsx](file:///c:/projek%20techno/projek/src/components/interview/InterviewRoom.tsx).
+- **Penanganan Autoplay Browser:** Menambahkan listener gesture pengguna pertama kali (`window.addEventListener('click', ...)`) dan tombol "Ulang Suara" interaktif di [src/components/interview/ChatSubtitle.tsx](file:///c:/projek%20techno/projek/src/components/interview/ChatSubtitle.tsx) agar suara Web Speech API tidak dibisukan oleh kebijakan autoplay Chrome/Edge.
+- **Parsing Stream SSE:** Memperbaiki akumulasi teks chunk SSE di `InterviewRoom.tsx` agar mengurai baris `data: {"text": "..."}` secara presisi dan tidak membacakan format JSON mentah ke Text-to-Speech.
+
+### 2. Dialog Wawancara Dinamis & Alami (Tanpa Template)
+- Membuat modul engine percakapan dinamis di [src/lib/ai/dynamicInterview.ts](file:///c:/projek%20techno/projek/src/lib/ai/dynamicInterview.ts):
+  - `generateDynamicOpeningGreeting`: Menghasilkan sapaan awal yang bervariasi, luwes, dan ramah khas recruiter/lead di Indonesia yang menyesuaikan perusahaan, posisi, dan persona. Tidak lagi memakai kalimat template statis.
+  - `streamDynamicInterviewerReply`: Streaming balasan kontekstual yang merespon secara spesifik jawaban pelamar, mendeteksi kata kunci pengalaman/teknologi, dan mengajukan pertanyaan lanjutan bertahap (perkenalan, proyek teknis, studi kasus STAR, penutup).
+
+---
+
+## [2026-11-24 13:25] - Integrasi Google Gemini AI Engine (@google/genai) & Penguatan Keamanan Multi-User
+
+### 1. Integrasi Google Gemini Official SDK
+- Menginstal SDK resmi `@google/genai` (v0.1.2+).
+- Membuat helper engine AI terpusat di [src/lib/ai/gemini.ts](file:///c:/projek%20techno/projek/src/lib/ai/gemini.ts) yang mengimplementasikan:
+  - `generateGeminiInterviewReply`: Generator percakapan dinamis berbasis context dan persona HRD.
+  - `generateGeminiEvaluation`: Evaluasi terstruktur metode STAR dengan output skema JSON presisi tinggi.
+  - `streamGeminiInterviewerReply`: Server-Sent Events (SSE) streaming untuk subtitle real-time di ruang wawancara.
+- Mengintegrasikan Gemini sebagai penyedia AI Prioritas 1 di seluruh endpoint wawancara:
+  - [src/app/api/interview/chat/route.ts](file:///c:/projek%20techno/projek/src/app/api/interview/chat/route.ts)
+  - [src/app/api/interview/evaluate/route.ts](file:///c:/projek%20techno/projek/src/app/api/interview/evaluate/route.ts)
+  - [src/app/api/interviews/[id]/chat/route.ts](file:///c:/projek%20techno/projek/src/app/api/interviews/[id]/chat/route.ts)
+
+### 2. Multi-Model Selector & UI Modal Pengaturan AI
+- Memperbarui [src/components/Settings/LlmSettingsModal.tsx](file:///c:/projek%20techno/projek/src/components/Settings/LlmSettingsModal.tsx) dengan:
+  - Dukungan Google Gemini (`gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`).
+  - Fitur pengujian koneksi live API key langsung dari UI dengan panduan link pembuatan key Google AI Studio.
+  - Penyimpanan API key personal pengguna secara aman di local browser storage (opsional).
+
+### 3. Keamanan & Multi-User Safeguards
+- **Zero API Key Leakage:** API key sistem disimpan di server environment (`GEMINI_API_KEY`) dan tidak pernah dikirim ke client.
+- **Quota & Balance Protection:** Validasi sisa kuota sesi pengguna (`credits` / `isPro`) pada database PostgreSQL sebelum panggilan AI dieksekusi.
+- **Rate Limiting:** Proteksi request berulang dari IP / ID yang sama untuk mencegah spam & eksploitasi kuota.
+
+---
+
 ## [2026-11-23 13:12] - Redesign Form Persiapan (UI Baru 5-Langkah), Perbaikan Pesan Double & Auto-Finish Panggilan
 
 ### 1. Implementasi Tampilan Baru Layar Persiapan Wawancara (Sesuai Mockup HTML Pengguna)

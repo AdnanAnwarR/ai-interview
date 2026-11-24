@@ -33,7 +33,12 @@ export async function GET(
 
         let evaluationData = dbSession.evaluation?.json;
 
-        if (!evaluationData) {
+        // Cek apakah data evaluasi lama bernilai cacat (misal hardcoded 70 dari fallback lama)
+        const isOutdatedFallback =
+          evaluationData &&
+          JSON.stringify(evaluationData).includes('Komunikasi jelas, sopan, dan relevan dengan posisi');
+
+        if (!evaluationData || isOutdatedFallback) {
           const evalResult = await evaluateInterview(
             {
               perusahaan: dbSession.company,
@@ -47,15 +52,33 @@ export async function GET(
             }))
           );
 
-          const savedEval = await db.evaluation.create({
-            data: {
-              sessionId: dbSession.id,
-              overallScore: evalResult.overall.score,
-              json: evalResult as unknown as Prisma.InputJsonValue,
-            },
-          });
+          if (dbSession.evaluation) {
+            const updatedEval = await db.evaluation.update({
+              where: { id: dbSession.evaluation.id },
+              data: {
+                overallScore: evalResult.overall.score,
+                json: evalResult as unknown as Prisma.InputJsonValue,
+              },
+            });
+            evaluationData = updatedEval.json;
+          } else {
+            const savedEval = await db.evaluation.create({
+              data: {
+                sessionId: dbSession.id,
+                overallScore: evalResult.overall.score,
+                json: evalResult as unknown as Prisma.InputJsonValue,
+              },
+            });
+            evaluationData = savedEval.json;
+          }
+        }
 
-          evaluationData = savedEval.json;
+        // Pastikan status sesi ditandai FINISHED saat melihat hasil
+        if (dbSession.status !== 'FINISHED') {
+          await db.interviewSession.update({
+            where: { id: dbSession.id },
+            data: { status: 'FINISHED', endedAt: dbSession.endedAt || new Date() },
+          });
         }
 
         return NextResponse.json({

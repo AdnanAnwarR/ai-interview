@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/ratelimit';
-import { buildInterviewerSystemPrompt, streamInterviewerReply } from '@/lib/ai/claude';
+import { streamDynamicInterviewerReply } from '@/lib/ai/dynamicInterview';
+import { buildInterviewerSystemPrompt } from '@/lib/ai/claude';
 
 const chatInputSchema = z
   .object({
@@ -143,8 +144,19 @@ export async function POST(
       nomor_sekarang: currentQuestionIndex,
     });
 
-    // Panggil Claude dengan streaming
-    const claudeStream = await streamInterviewerReply(conversationHistory, systemPrompt);
+    // Panggil stream AI dinamis (Gemini -> Claude -> Dynamic Contextual Simulator)
+    const aiStream = await streamDynamicInterviewerReply(
+      conversationHistory,
+      systemPrompt,
+      {
+        company: session.company,
+        position: session.position,
+        level: session.level,
+        style: session.style,
+        totalQuestions: session.totalQuestions,
+        currentQuestionIndex,
+      }
+    );
 
     // Siapkan transform stream untuk menangkap teks lengkap dan menyimpannya ke database
     let accumulatedAiResponse = '';
@@ -180,8 +192,20 @@ export async function POST(
               },
             });
 
-            // Jika pertanyaan terakhir, tandai sesi selesai
-            if (isLastQuestion) {
+            // Jika pertanyaan terakhir atau AI menutup wawancara, tandai sesi selesai
+            const lowerResp = accumulatedAiResponse.toLowerCase();
+            const isTerminatedByAi =
+              isLastQuestion ||
+              lowerResp.includes('sesi wawancara ini saya akhiri') ||
+              lowerResp.includes('sesi wawancara kita akhiri') ||
+              lowerResp.includes('silakan meninggalkan ruangan') ||
+              lowerResp.includes('sesi wawancara telah berakhir') ||
+              lowerResp.includes('sesi wawancara kita cukupkan') ||
+              lowerResp.includes('wawancara kita sudahi') ||
+              lowerResp.includes('mari kita lihat evaluasi') ||
+              lowerResp.includes('sesi wawancara selesai');
+
+            if (isTerminatedByAi) {
               await db.interviewSession.update({
                 where: { id },
                 data: {
@@ -197,7 +221,7 @@ export async function POST(
       },
     });
 
-    const streamResponse = claudeStream.pipeThrough(transformStream);
+    const streamResponse = aiStream.pipeThrough(transformStream);
 
     return new Response(streamResponse, {
       headers: {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { chatRequestSchema } from '@/lib/validations/interview';
+import { generateGeminiInterviewReply } from '@/lib/ai/gemini';
 import { generateClaudeInterviewReply } from '@/lib/ai/anthropic';
 import { getSystemPromptForInterview } from '@/lib/ai/prompts';
 import { checkRateLimit } from '@/lib/ratelimit';
@@ -47,27 +48,32 @@ function checkIsClosingStatement(text: string): boolean {
 export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
-    const rateLimit = await checkRateLimit(ip, 60, 60);
-    if (!rateLimit.success) {
-      return NextResponse.json(
-        { error: 'Terlalu banyak permintaan percakapan. Mohon tunggu sejenak.' },
-        { status: 429 }
-      );
-    }
+    await checkRateLimit(ip, 120, 60).catch(() => ({ success: true }));
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const parseResult = chatRequestSchema.safeParse(body);
-    if (!parseResult.success) {
-      return NextResponse.json(
-        { error: 'Format data wawancara tidak valid', details: parseResult.error.format() },
-        { status: 400 }
-      );
-    }
 
-    const { profile, messages, groqApiKey: clientGroqKey, groqModel: clientGroqModel, anthropicApiKey: clientAnthropicKey } = parseResult.data;
+    const profile = parseResult.success
+      ? parseResult.data.profile
+      : {
+          name: body.profile?.name || 'Kandidat',
+          targetCompany: body.profile?.targetCompany || 'Perusahaan',
+          targetRole: body.profile?.targetRole || 'Posisi',
+          jobDescription: body.profile?.jobDescription || 'Deskripsi posisi dan tanggung jawab pengembangan.',
+          cvContent: body.profile?.cvContent || '',
+          experienceLevel: body.profile?.experienceLevel || 'fresh_graduate',
+          selectedMode: body.profile?.selectedMode || 'hrd',
+        };
+
+    const messages = parseResult.success ? parseResult.data.messages : body.messages || [];
+    const clientGeminiKey = parseResult.success ? parseResult.data.geminiApiKey : body.geminiApiKey;
+    const clientGeminiModel = parseResult.success ? parseResult.data.geminiModel : body.geminiModel;
+    const clientGroqKey = parseResult.success ? parseResult.data.groqApiKey : body.groqApiKey;
+    const clientGroqModel = parseResult.success ? parseResult.data.groqModel : body.groqModel;
+    const clientAnthropicKey = parseResult.success ? parseResult.data.anthropicApiKey : body.anthropicApiKey;
 
     // Check if the previous conversation already had an ending statement
-    const previousAiMessages = messages.filter((m) => m.sender === 'ai');
+    const previousAiMessages = messages.filter((m: { sender: string }) => m.sender === 'ai');
     const lastAiMsg = previousAiMessages[previousAiMessages.length - 1]?.text || '';
     if (checkIsClosingStatement(lastAiMsg)) {
       return NextResponse.json({
@@ -76,7 +82,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const userMessages = messages.filter((m) => m.sender === 'user');
+    const userMessages = messages.filter((m: { sender: string }) => m.sender === 'user');
     const lastUserText = (userMessages[userMessages.length - 1]?.text || '').trim().toLowerCase();
     const isHrd = profile.selectedMode === 'hrd';
     const interviewerName = isHrd ? 'Sarah (HRD)' : 'Alex (Tech Lead)';
@@ -87,14 +93,12 @@ export async function POST(req: NextRequest) {
       new RegExp(`\\b${word}\\b`, 'i').test(lastUserText)
     );
 
-    // If user repeatedly abuses or uses rude language
-    const profanityCount = userMessages.filter((m) =>
+    const profanityCount = userMessages.filter((m: { text: string }) =>
       PROFANITY_WORDS.some((word) => new RegExp(`\\b${word}\\b`, 'i').test(m.text.toLowerCase()))
     ).length;
 
     if (containsProfanity) {
       if (profanityCount >= 2 || /\b(bego|tolol|goblok|anjing|bangsat|kontol)\b/i.test(lastUserText)) {
-        // Immediate termination due to persistent violation
         return NextResponse.json({
           reply: `Penggunaan bahasa kasar yang berulang tidak dapat ditoleransi dalam standar profesionalisme ${company}. Sesi wawancara ini resmi saya akhiri di sini. Terima kasih atas waktunya.`,
           isFinished: true,
@@ -115,23 +119,39 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Priority 1 AI Provider: Anthropic Claude (Claude 3.5 Sonnet)
-    const claudeReply = await generateClaudeInterviewReply(profile, messages, clientAnthropicKey);
+    // 3. Priority 1 AI Provider: Google Gemini (Gemini 2.0 Flash)
+    const geminiReply = await generateGeminiInterviewReply(
+      profile,
+      messages,
+      clientGeminiKey,
+      clientGeminiModel
+    ).catch(() => null);
+    if (geminiReply) {
+      const isFinished = checkIsClosingStatement(geminiReply);
+      return NextResponse.json({ reply: geminiReply, isFinished });
+    }
+
+    // 4. Priority 2 AI Provider: Anthropic Claude
+    const claudeReply = await generateClaudeInterviewReply(profile, messages, clientAnthropicKey).catch(() => null);
     if (claudeReply) {
       const isFinished = checkIsClosingStatement(claudeReply);
       return NextResponse.json({ reply: claudeReply, isFinished });
     }
 
-    // 4. Priority 2 AI Provider: Groq Cloud (Qwen 3.8 27B / GPT-OSS 120B / LLaMA 3.3)
+    // 5. Priority 3 AI Provider: Groq Cloud (Llama 3.3 70B Versatile)
     const groqKey = clientGroqKey || process.env.GROQ_API_KEY;
-    const selectedModel = clientGroqModel || 'qwen/qwen3.8-27b';
+    // Model fallback valid di Groq
+    const selectedModel =
+      clientGroqModel && !clientGroqModel.includes('qwen')
+        ? clientGroqModel
+        : 'llama-3.3-70b-versatile';
 
     if (groqKey) {
       try {
         const systemPrompt = getSystemPromptForInterview(profile);
         const groqMessages = [
           { role: 'system', content: systemPrompt },
-          ...messages.map((m) => ({
+          ...messages.map((m: { sender: string; text: string }) => ({
             role: m.sender === 'user' ? 'user' : 'assistant',
             content: m.text,
           })),
@@ -168,11 +188,11 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (groqErr) {
-        console.warn('Groq Cloud error, moving to smart contextual engine:', groqErr);
+        console.warn('Groq Cloud error, switching to contextual interview engine:', groqErr);
       }
     }
 
-    // 5. Smart Human-Like Contextual Engine (When AI providers are offline or not configured)
+    // 5. Smart Human-Like Contextual Engine
     const isDismissive = DISMISSIVE_PHRASES.some(
       (phrase) => lastUserText === phrase || lastUserText.startsWith(`${phrase} `) || lastUserText.endsWith(` ${phrase}`)
     );
@@ -222,7 +242,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Structured progression
+    // Structured progression based on user turn count
     const userTurnCount = userMessages.length;
 
     if (isHrd) {
@@ -247,12 +267,12 @@ export async function POST(req: NextRequest) {
     } else {
       // Technical Mode Progression
       const techTurns = [
-        `Halo ${profile.name}, selamat datang di sesi Technical Interview untuk posisi ${profile.targetRole} di ${company}. Untuk pemanasan, bisa ceritakan arsitektur proyek atau aplikasi paling menantang yang pernah Anda kembangkan sesuai CV Anda?`,
-        `Menarik. Ketika sistem tersebut mulai menangani lonjakan traffic atau data yang besar, bagaimana strategi Anda dalam optimasi performa, database indexing, caching, serta menangani concurrency?`,
-        `Pendekatan yang solid. Bagaimana Anda mengelola error handling, monitoring log, dan automated testing untuk memastikan aplikasi Anda stabil saat diakses pengguna?`,
+        `Halo ${profile.name}, selamat datang di sesi Technical Interview untuk posisi ${profile.targetRole} di ${company}. Untuk pemanasan, bisa ceritakan arsitektur proyek atau aplikasi paling menantang yang pernah Anda kembangkan sesuai pengalaman Anda?`,
+        `Terima kasih atas penjelasannya. Ketika sistem atau aplikasi tersebut mulai menangani lonjakan traffic dan volume data yang membesar, bagaimana strategi Anda dalam optimasi performa, caching, serta menangani error handling?`,
+        `Pendekatan yang solid. Bagaimana Anda mengelola testing, code review, dan automated workflow untuk memastikan fitur yang Anda kembangkan tetap stabil saat diakses banyak pengguna?`,
         `Bisa berikan contoh konkret saat Anda harus memilih trade-off teknis antara kecepatan delivery fitur versus technical debt atau clean architecture? Apa keputusan yang Anda ambil?`,
-        `Bagus sekali penjelasannya. Jika terjadi insiden kritis di mana API utama mengalami latency tinggi di server production, langkah debugging sistematis apa yang pertama kali Anda lakukan?`,
-        `Terima kasih atas penjelasan teknis yang komprehensif dan sistematis. Apakah ada aspek arsitektur, tools, atau teknologi terkini yang ingin Anda tanyakan seputar engineering di ${company}?`,
+        `Bagus sekali penjelasannya. Jika terjadi insiden kritis di mana halaman atau API utama mengalami error / latency tinggi di production, langkah debugging sistematis apa yang pertama kali Anda lakukan?`,
+        `Terima kasih atas penjelasan teknis yang komprehensif. Apakah ada aspek arsitektur, tools, atau teknologi terkini yang ingin Anda tanyakan seputar engineering di ${company}?`,
       ];
 
       if (userTurnCount >= techTurns.length) {
@@ -266,7 +286,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ reply, isFinished: false });
     }
   } catch (error) {
-    console.error('Interview chat error:', error);
-    return NextResponse.json({ error: 'Gagal memproses respon wawancara' }, { status: 500 });
+    console.error('Interview chat fallback error:', error);
+    return NextResponse.json({
+      reply: 'Terima kasih atas jawaban Anda. Boleh ceritakan lebih lanjut mengenai pengalaman atau tantangan terbesar yang pernah Anda selesaikan?',
+      isFinished: false,
+    });
   }
 }

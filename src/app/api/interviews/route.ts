@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
-import { buildInterviewerSystemPrompt } from '@/lib/ai/claude';
-import Anthropic from '@anthropic-ai/sdk';
+import { generateDynamicOpeningGreeting } from '@/lib/ai/dynamicInterview';
 
 const createInterviewSchema = z
   .object({
@@ -49,7 +48,8 @@ export async function POST(req: NextRequest) {
 
     const { company, position, level, style, totalQuestions } = parseResult.data;
 
-    // Batasi 1 sesi ACTIVE per pengguna
+    // Jika pengguna masih memiliki sesi aktif sebelumnya, otomatis selesaikan sesi lama tersebut
+    // agar pengguna (termasuk user PRO) bisa langsung memulai sesi latihan baru tanpa terblokir
     const existingActiveSession = await db.interviewSession.findFirst({
       where: {
         userId: user.id,
@@ -58,27 +58,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (existingActiveSession) {
-      const now = Date.now();
-      const started = new Date(existingActiveSession.startedAt).getTime();
-      const diffMinutes = (now - started) / (1000 * 60);
-
-      // Jika sesi aktif masih berlangsung < 45 menit, tolak pembuatan sesi ganda
-      if (diffMinutes < 45) {
-        return NextResponse.json(
-          {
-            error: 'ACTIVE_SESSION_EXISTS',
-            message: 'Anda masih memiliki sesi wawancara yang sedang aktif. Silakan selesaikan sesi tersebut terlebih dahulu.',
-            activeSessionId: existingActiveSession.id,
-          },
-          { status: 409 }
-        );
-      } else {
-        // Otomatis tutup sesi usang (> 45 menit)
-        await db.interviewSession.update({
-          where: { id: existingActiveSession.id },
-          data: { status: 'FINISHED', endedAt: new Date() },
-        });
-      }
+      await db.interviewSession.update({
+        where: { id: existingActiveSession.id },
+        data: { status: 'FINISHED', endedAt: new Date() },
+      });
     }
 
     // Cek saldo kredit atau langganan aktif
@@ -120,48 +103,15 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    // Minta pesan pembuka dari Claude untuk sesi baru
-    let openingGreeting = '';
-    const systemPrompt = buildInterviewerSystemPrompt({
-      perusahaan: company,
-      posisi: position,
+    // Buat sapaan pembuka dinamis & natural (Gemini / Human Varied)
+    const openingGreeting = await generateDynamicOpeningGreeting({
+      company,
+      position,
       level,
-      gaya: style,
-      total_pertanyaan: totalQuestions,
-      nomor_sekarang: 1,
+      style,
+      totalQuestions,
+      currentQuestionIndex: 1,
     });
-
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    const model = process.env.ANTHROPIC_MODEL_INTERVIEW || 'claude-haiku-5-5';
-
-    if (apiKey && !apiKey.includes('placeholder')) {
-      try {
-        const client = new Anthropic({ apiKey: apiKey.trim() });
-        const aiRes = await client.messages.create({
-          model: model.includes('5-5') ? 'claude-3-5-haiku-20241022' : model,
-          max_tokens: 300,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: 'Mulai wawancara sekarang. Buka dengan sapaan dan minta aku memperkenalkan diri.',
-            },
-          ],
-        });
-
-        const firstBlock = aiRes.content[0];
-        if (firstBlock && firstBlock.type === 'text') {
-          openingGreeting = firstBlock.text.trim();
-        }
-      } catch (err) {
-        console.warn('Claude opening generation failed, using tailored fallback:', err);
-      }
-    }
-
-    if (!openingGreeting) {
-      const interviewerName = style === 'stress' ? 'Budi' : style === 'tegas' ? 'Alex' : 'Sarah';
-      openingGreeting = `Halo! Selamat datang di sesi wawancara untuk posisi ${position} di ${company}. Saya ${interviewerName} yang akan memandu sesi Anda hari ini. Untuk memulai, bisakah Anda memperkenalkan diri secara ringkas dan apa yang memotivasi Anda melamar posisi ini?`;
-    }
 
     // Simpan pesan pembuka sebagai Message pertama
     const initialMessage = await db.message.create({

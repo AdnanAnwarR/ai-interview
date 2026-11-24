@@ -16,7 +16,7 @@ import {
 interface LlmSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (groqKey: string, groqModel: string, anthropicKey?: string) => void;
+  onSave: (groqKey: string, groqModel: string, anthropicKey?: string, geminiKey?: string, geminiModel?: string) => void;
   currentApiKey: string;
   currentModel: string;
 }
@@ -28,17 +28,23 @@ export const LlmSettingsModal: React.FC<LlmSettingsModalProps> = ({
   currentApiKey,
   currentModel,
 }) => {
+  const [geminiKey, setGeminiKey] = useState('');
+  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
   const [apiKey, setApiKey] = useState(currentApiKey);
-  const [model, setModel] = useState(currentModel || 'qwen/qwen3.8-27b');
+  const [model, setModel] = useState(currentModel || 'llama-3.3-70b-versatile');
   const [anthropicKey, setAnthropicKey] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     setApiKey(currentApiKey);
-    setModel(currentModel || 'qwen/qwen3.8-27b');
+    setModel(currentModel || 'llama-3.3-70b-versatile');
     if (typeof window !== 'undefined') {
+      const savedGemini = localStorage.getItem('gemini_api_key');
+      const savedGeminiModel = localStorage.getItem('gemini_model');
       const savedAnthropic = localStorage.getItem('anthropic_api_key');
+      if (savedGemini) setGeminiKey(savedGemini);
+      if (savedGeminiModel) setGeminiModel(savedGeminiModel);
       if (savedAnthropic) setAnthropicKey(savedAnthropic);
     }
     setTestResult(null);
@@ -47,10 +53,10 @@ export const LlmSettingsModal: React.FC<LlmSettingsModalProps> = ({
   if (!isOpen) return null;
 
   const handleTestConnection = async () => {
-    if (!apiKey.trim() && !anthropicKey.trim()) {
+    if (!geminiKey.trim() && !apiKey.trim() && !anthropicKey.trim()) {
       setTestResult({
         success: false,
-        message: 'Masukkan Groq API Key atau Claude API Key terlebih dahulu sebelum menguji koneksi.',
+        message: 'Masukkan Google Gemini API Key, Groq API Key, atau Claude API Key terlebih dahulu.',
       });
       return;
     }
@@ -58,7 +64,44 @@ export const LlmSettingsModal: React.FC<LlmSettingsModalProps> = ({
     setIsTesting(true);
     setTestResult(null);
 
-    // If Anthropic key provided, test Anthropic or Groq
+    // 1. Prioritas uji Google Gemini
+    if (geminiKey.trim()) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey.trim()}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: 'Halo! Jawab OK jika terhubung.' }] }],
+            }),
+          }
+        );
+
+        if (res.ok) {
+          setTestResult({
+            success: true,
+            message: `Koneksi Google Gemini (${geminiModel}) berhasil! Model siap digunakan.`,
+          });
+        } else {
+          const err = await res.json().catch(() => ({}));
+          setTestResult({
+            success: false,
+            message: err?.error?.message || 'API Key Google Gemini tidak valid.',
+          });
+        }
+      } catch {
+        setTestResult({
+          success: false,
+          message: 'Gagal menghubungi server Google Gemini. Periksa koneksi internet Anda.',
+        });
+      } finally {
+        setIsTesting(false);
+      }
+      return;
+    }
+
+    // 2. Uji Groq Cloud
     if (apiKey.trim()) {
       try {
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -80,34 +123,46 @@ export const LlmSettingsModal: React.FC<LlmSettingsModalProps> = ({
             message: 'Koneksi Groq AI berhasil! Model siap digunakan untuk wawancara.',
           });
         } else {
-          const err = await res.json();
+          const err = await res.json().catch(() => ({}));
           setTestResult({
             success: false,
-            message: err?.error?.message || 'API Key tidak valid atau kuota habis.',
+            message: err?.error?.message || 'API Key Groq tidak valid atau kuota habis.',
           });
         }
       } catch {
         setTestResult({
           success: false,
-          message: 'Gagal menghubungi server AI. Periksa koneksi internet Anda.',
+          message: 'Gagal menghubungi server Groq AI. Periksa koneksi internet Anda.',
         });
       } finally {
         setIsTesting(false);
       }
-    } else {
-      setTestResult({
-        success: true,
-        message: 'Kunci Claude tersimpan dan akan digunakan pada sesi wawancara.',
-      });
-      setIsTesting(false);
+      return;
     }
+
+    // 3. Anthropic Claude Key
+    setTestResult({
+      success: true,
+      message: 'Kunci Claude tersimpan dan akan digunakan pada sesi wawancara.',
+    });
+    setIsTesting(false);
   };
 
   const handleSaveSettings = () => {
-    if (typeof window !== 'undefined' && anthropicKey.trim()) {
-      localStorage.setItem('anthropic_api_key', anthropicKey.trim());
+    if (typeof window !== 'undefined') {
+      if (geminiKey.trim()) {
+        localStorage.setItem('gemini_api_key', geminiKey.trim());
+        localStorage.setItem('gemini_model', geminiModel);
+      } else {
+        localStorage.removeItem('gemini_api_key');
+      }
+      if (anthropicKey.trim()) {
+        localStorage.setItem('anthropic_api_key', anthropicKey.trim());
+      } else {
+        localStorage.removeItem('anthropic_api_key');
+      }
     }
-    onSave(apiKey.trim(), model, anthropicKey.trim());
+    onSave(apiKey.trim(), model, anthropicKey.trim(), geminiKey.trim(), geminiModel);
     onClose();
   };
 
@@ -137,14 +192,63 @@ export const LlmSettingsModal: React.FC<LlmSettingsModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           {/* Info Banner */}
           <div className="bg-[#EAF2FE]/60 border border-[#4A8DF0]/25 rounded-2xl p-3.5 text-xs text-[#1B2A41] leading-relaxed">
             <p className="font-bold text-[#2F67BB] mb-1 flex items-center space-x-1.5">
               <Sparkles className="w-3.5 h-3.5 text-[#F26A2B]" />
-              <span>Dukungan Multi-Model AI (Claude & Groq)</span>
+              <span>Dukungan Multi-Model AI (Gemini, Claude, Groq)</span>
             </p>
-            Platform Wawancarain mendukung <strong>Claude 3.5 Sonnet</strong> dari Anthropic dan model open-source <strong>Qwen / LLaMA</strong> via Groq Cloud gratis (&lt;0.4 detik). Kunci tersimpan aman di browser lokal Anda.
+            Platform Wawancarain mendukung <strong>Google Gemini (Gemini 2.0 Flash)</strong>, <strong>Claude 3.5 Sonnet</strong> dari Anthropic, dan model open-source via <strong>Groq Cloud</strong>. Kunci pribadi Anda tersimpan aman secara lokal di browser Anda.
+          </div>
+
+          {/* Google Gemini API Key Input */}
+          <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/80">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-[#1B2A41] flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>Google Gemini API Key (Direkomendasikan)</span>
+              </label>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-[#2F67BB] hover:underline font-semibold flex items-center space-x-1"
+              >
+                <span>Dapatkan Kunci Gratis</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <div className="relative mb-2">
+              <Key className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="password"
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full bg-white border border-amber-200 rounded-xl pl-9 pr-3 py-2 text-xs text-[#1B2A41] placeholder-slate-400 focus:outline-none focus:border-[#F26A2B] font-mono shadow-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                Pilihan Model Gemini
+              </label>
+              <select
+                value={geminiModel}
+                onChange={(e) => setGeminiModel(e.target.value)}
+                className="w-full bg-white border border-amber-200 rounded-xl px-3 py-1.5 text-xs text-[#1B2A41] focus:outline-none focus:border-[#F26A2B] font-medium"
+              >
+                <option value="gemini-2.0-flash">
+                  Gemini 2.0 Flash (Generasi Terbaru - Super Cepat & Cerdas)
+                </option>
+                <option value="gemini-1.5-flash">
+                  Gemini 1.5 Flash (Respons Sangat Ringan)
+                </option>
+                <option value="gemini-1.5-pro">
+                  Gemini 1.5 Pro (Penalaran Kompleks & Detail)
+                </option>
+              </select>
+            </div>
           </div>
 
           {/* Groq API Key Input */}
@@ -185,17 +289,11 @@ export const LlmSettingsModal: React.FC<LlmSettingsModalProps> = ({
               onChange={(e) => setModel(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-[#1B2A41] focus:outline-none focus:border-[#4A8DF0] focus:bg-white font-medium"
             >
-              <option value="qwen/qwen3.8-27b">
-                Qwen 3.8 27B (Direkomendasikan - Paling Fasih Bahasa Indonesia)
-              </option>
-              <option value="openai/gpt-oss-120b">
-                GPT-OSS 120B (Penalaran Arsitektur Mendalam)
-              </option>
-              <option value="openai/gpt-oss-20b">
-                GPT-OSS 20B (Ringan & Cepat)
-              </option>
               <option value="llama-3.3-70b-versatile">
-                LLaMA 3.3 70B Versatile
+                LLaMA 3.3 70B Versatile (Direkomendasikan - Paling Akurat & Cepat)
+              </option>
+              <option value="llama-3.1-8b-instant">
+                LLaMA 3.1 8B Instant (Respons Sangat Ringan)
               </option>
             </select>
           </div>

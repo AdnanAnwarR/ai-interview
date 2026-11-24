@@ -1,96 +1,82 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 
 interface ControlBarProps {
   isRecording: boolean;
-  isCameraOn: boolean;
+  isMuted: boolean;
   isAiSpeaking: boolean;
   onToggleMic: () => void;
-  onToggleCamera: () => void;
+  onToggleSpeaker: () => void;
   onEndInterview: () => void;
 }
 
 export function ControlBar({
   isRecording,
-  isCameraOn,
+  isMuted,
   isAiSpeaking,
   onToggleMic,
-  onToggleCamera,
+  onToggleSpeaker,
   onEndInterview,
 }: ControlBarProps) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   return (
     <>
-      <div className="w-full flex items-center justify-center gap-4 sm:gap-6 py-4">
-        {/* Tombol 1: Mikrofon (Bulat di tengah) */}
-        <div className="flex flex-col items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onToggleMic}
-            disabled={isAiSpeaking}
-            aria-label={isRecording ? 'Hentikan rekaman suara' : 'Mulai bicara dengan suara'}
-            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center shadow-lg transition-all transform active:scale-95 focus:outline-hidden focus:ring-4 ${
-              isRecording
-                ? 'bg-[#F26A2B] text-white ring-4 ring-[#F26A2B]/40 animate-pulse'
-                : isAiSpeaking
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-[#4A8DF0] hover:bg-[#2F67BB] text-white ring-2 ring-[#4A8DF0]/30 hover:scale-105'
-            }`}
-          >
-            {isRecording ? (
-              <Mic className="w-7 h-7 animate-bounce" />
-            ) : (
-              <MicOff className="w-6 h-6" />
-            )}
-          </button>
-          <span className="text-xs font-semibold text-[#1B2A41]">
-            {isRecording ? 'Merekam Suara...' : 'Mikrofon'}
-          </span>
-        </div>
+      <div className="w-full flex items-center justify-center gap-6 sm:gap-8 py-4 sm:py-5 select-none">
+        {/* Tombol 1: Speaker (Kiri) */}
+        <button
+          type="button"
+          onClick={onToggleSpeaker}
+          title={isMuted ? 'Nyalakan suara pewawancara' : 'Bisukan suara pewawancara'}
+          className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-[#212F45] hover:bg-[#2C3E5A] text-white flex items-center justify-center shadow-xl transition-all active:scale-95 hover:scale-105 focus:outline-hidden"
+        >
+          {isMuted ? (
+            <VolumeX className="w-6 h-6 sm:w-7 sm:h-7 text-rose-400" />
+          ) : (
+            <Volume2 className="w-6 h-6 sm:w-7 sm:h-7 text-slate-200" />
+          )}
+        </button>
 
-        {/* Tombol 2: Kamera on/off (Bulat) */}
-        <div className="flex flex-col items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onToggleCamera}
-            aria-label={isCameraOn ? 'Matikan pratinjau kamera' : 'Nyalakan pratinjau kamera'}
-            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center shadow-lg transition-all transform active:scale-95 focus:outline-hidden focus:ring-4 ${
-              isCameraOn
-                ? 'bg-white hover:bg-slate-100 text-[#1B2A41] border border-slate-300 ring-2 ring-[#2F67BB]/20'
-                : 'bg-slate-700 hover:bg-slate-800 text-white'
-            }`}
-          >
-            {isCameraOn ? (
-              <Video className="w-6 h-6 text-[#2F67BB]" />
-            ) : (
-              <VideoOff className="w-6 h-6 text-slate-300" />
-            )}
-          </button>
-          <span className="text-xs font-semibold text-[#1B2A41]">
-            {isCameraOn ? 'Kamera Nyala' : 'Kamera Mati'}
-          </span>
-        </div>
+        {/* Tombol 2: Akhiri Panggilan / End Call (Tengah - Merah Besar) */}
+        <button
+          type="button"
+          onClick={() => setShowConfirmModal(true)}
+          title="Akhiri wawancara sekarang"
+          className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#E53935] hover:bg-[#D32F2F] text-white flex items-center justify-center shadow-2xl shadow-red-500/40 transition-all active:scale-95 hover:scale-105 focus:outline-hidden"
+        >
+          {/* Handset Phone Down SVG Icon */}
+          <svg className="w-7 h-7 sm:w-9 sm:h-9 fill-white" viewBox="0 0 24 24">
+            <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.58.9A14.48 14.48 0 0 1 2.5 15c-.44.07-.85-.18-1.02-.58L.15 11.2a1.05 1.05 0 0 1 .25-1.12C4.1 6.8 7.85 5 12 5s7.9 1.8 11.6 5.08c.32.28.42.74.25 1.12l-1.33 3.22c-.17.4-.58.65-1.02.58a14.48 14.48 0 0 1-4.32-1.28.99.99 0 0 1-.58-.9v-3.1C15.15 9.25 13.6 9 12 9z" />
+          </svg>
+        </button>
 
-        {/* Tombol 3: Akhiri Wawancara (Merah Bulat) */}
-        <div className="flex flex-col items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setShowConfirmModal(true)}
-            aria-label="Akhiri sesi wawancara sekarang"
-            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-lg shadow-rose-600/30 transition-all transform active:scale-95 focus:outline-hidden focus:ring-4 focus:ring-rose-500/30 hover:scale-105"
-          >
-            <PhoneOff className="w-6 h-6" />
-          </button>
-          <span className="text-xs font-semibold text-rose-700">Akhiri</span>
-        </div>
+        {/* Tombol 3: Mikrofon (Kanan) */}
+        <button
+          type="button"
+          onClick={onToggleMic}
+          disabled={isAiSpeaking}
+          title={isRecording ? 'Hentikan rekaman suara' : 'Mulai bicara dengan mikrofon'}
+          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full flex items-center justify-center shadow-xl transition-all active:scale-95 hover:scale-105 focus:outline-hidden ${
+            isRecording
+              ? 'bg-[#F26A2B] text-white ring-4 ring-[#F26A2B]/40 animate-pulse'
+              : isAiSpeaking
+              ? 'bg-slate-700/60 text-slate-500 cursor-not-allowed'
+              : 'bg-[#212F45] hover:bg-[#2C3E5A] text-white'
+          }`}
+        >
+          {isRecording ? (
+            <Mic className="w-6 h-6 sm:w-7 sm:h-7 text-white animate-bounce" />
+          ) : (
+            <Mic className="w-6 h-6 sm:w-7 sm:h-7 text-slate-200" />
+          )}
+        </button>
       </div>
 
       {/* Modal Dialog Konfirmasi Penghentian Wawancara */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 text-center">
             <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 mx-auto flex items-center justify-center mb-3">
               <AlertTriangle className="w-6 h-6" />

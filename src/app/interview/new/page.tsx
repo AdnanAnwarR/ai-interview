@@ -3,8 +3,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { AppHeader } from '@/components/shared/AppHeader';
 import { CandidateLevel, InterviewerStyle, QuestionCount } from '@/types/wawancara';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, Sparkles, Plus } from 'lucide-react';
 import { extractCvTextFromFile } from '@/lib/pdfParser';
 
 export default function NewInterviewPage() {
@@ -12,6 +13,7 @@ export default function NewInterviewPage() {
 
   // Balance / Sessions
   const [remainingSessions, setRemainingSessions] = useState<number>(1);
+  const [userPlan, setUserPlan] = useState<'free' | 'pro' | 'unlimited'>('free');
 
   // Step state (0: Target, 1: Lowongan & CV, 2: Suasana, 3: Cek perangkat, 4: Ringkasan)
   const [cur, setCur] = useState(0);
@@ -60,6 +62,9 @@ export default function NewInterviewPage() {
       .then((data) => {
         if (data && typeof data.sessionsRemaining === 'number') {
           setRemainingSessions(data.sessionsRemaining);
+        }
+        if (data && data.plan) {
+          setUserPlan(data.plan);
         }
       })
       .catch(() => {});
@@ -255,35 +260,11 @@ export default function NewInterviewPage() {
 
   return (
     <div className="w-full min-h-screen bg-[#F6F9FE] text-[#1B2A41]">
-      {/* Header */}
-      <header className="flex items-center justify-between max-w-[1040px] mx-auto px-5 py-4.5">
-        <Link href="/" className="flex items-center gap-2.5 font-fraunces font-bold text-2xl text-[#1B2A41]">
-          <svg width="34" height="34" viewBox="0 0 512 512" aria-hidden="true" className="shrink-0">
-            <rect width="512" height="512" rx="110" fill="#3C7BDB" />
-            <path
-              d="M176 140H336a40 40 0 0 1 40 40V290a40 40 0 0 1-40 40H250L190 388V330H176a40 40 0 0 1-40-40V180a40 40 0 0 1 40-40Z"
-              fill="#fff"
-            />
-            <path
-              d="M184 196 222 288 256 214 290 288 328 196"
-              fill="none"
-              stroke="#F26A2B"
-              strokeWidth="26"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span>
-            Wawancarain<span className="text-[#F26A2B]">.</span>
-          </span>
-        </Link>
-        <span className="bg-[#EAF2FE] text-[#2F67BB] rounded-full px-3.5 py-1.5 font-semibold text-sm">
-          {remainingSessions} sesi gratis tersisa
-        </span>
-      </header>
+      {/* Header Konsisten */}
+      <AppHeader />
 
       {/* Main Content */}
-      <main className="max-w-[1040px] mx-auto px-5 pt-2 pb-28">
+      <main className="max-w-[1040px] mx-auto px-5 pt-8 sm:pt-10 pb-28">
         <h1 className="font-fraunces text-3xl sm:text-4xl lg:text-[44px] font-bold leading-tight tracking-tight">
           Siapkan wawancaramu
         </h1>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { evaluateRequestSchema } from '@/lib/validations/interview';
+import { generateGeminiEvaluation } from '@/lib/ai/gemini';
 import { generateClaudeEvaluation } from '@/lib/ai/anthropic';
 import { ScorecardReport, AnswerScore } from '@/types/interview';
 import { getEvaluationSystemPrompt } from '@/lib/ai/prompts';
@@ -25,17 +26,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { profile, messages, groqApiKey: clientGroqKey, groqModel: clientGroqModel, anthropicApiKey: clientAnthropicKey } = parseResult.data;
+    const {
+      profile,
+      messages,
+      geminiApiKey: clientGeminiKey,
+      geminiModel: clientGeminiModel,
+      groqApiKey: clientGroqKey,
+      groqModel: clientGroqModel,
+      anthropicApiKey: clientAnthropicKey,
+    } = parseResult.data;
 
-    // 1. Try Claude Evaluation (Claude 3.5 Sonnet)
+    // 1. Try Google Gemini Evaluation (Gemini 2.0 Flash / 1.5 Pro)
+    const geminiReport = await generateGeminiEvaluation(
+      profile,
+      messages,
+      clientGeminiKey,
+      clientGeminiModel
+    ).catch(() => null);
+    if (geminiReport && geminiReport.overallScore) {
+      return NextResponse.json(geminiReport);
+    }
+
+    // 2. Try Claude Evaluation (Claude 3.5 Sonnet)
     const claudeReport = await generateClaudeEvaluation(profile, messages, clientAnthropicKey);
     if (claudeReport && claudeReport.overallScore) {
       return NextResponse.json(claudeReport);
     }
 
-    // 2. Try Groq Cloud Evaluation
+    // 3. Try Groq Cloud Evaluation
     const groqKey = clientGroqKey || process.env.GROQ_API_KEY;
-    const selectedModel = clientGroqModel || 'qwen/qwen3.8-27b';
+    const selectedModel =
+      clientGroqModel && !clientGroqModel.includes('qwen')
+        ? clientGroqModel
+        : 'llama-3.3-70b-versatile';
     const systemPrompt = getEvaluationSystemPrompt(profile);
 
     const transcriptText = messages

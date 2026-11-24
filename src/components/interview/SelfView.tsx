@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { VideoOff, User } from 'lucide-react';
+import { Camera } from 'lucide-react';
 
 interface SelfViewProps {
   isCameraOn: boolean;
   onToggleCamera: () => void;
 }
 
-export function SelfView({ isCameraOn }: SelfViewProps) {
+export function SelfView({ isCameraOn, onToggleCamera }: SelfViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -20,11 +20,11 @@ export function SelfView({ isCameraOn }: SelfViewProps) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             video: {
-              width: { ideal: 640 },
-              height: { ideal: 480 },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
               facingMode: 'user',
             },
-            audio: false, // audio dikelola terpisah via SpeechRecognition
+            audio: false,
           });
 
           if (!active) {
@@ -61,39 +61,42 @@ export function SelfView({ isCameraOn }: SelfViewProps) {
   }, [isCameraOn]);
 
   return (
-    <div className="relative group overflow-hidden rounded-2xl bg-[#1B2A41] border-2 border-white/80 shadow-xl w-32 h-44 sm:w-44 sm:h-32 transition-all">
+    <div className="w-full flex flex-col items-center justify-center select-none px-4">
       {isCameraOn ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover transform scale-x-[-1]" // Cermin (mirror mode)
-        />
+        <div className="relative group w-full max-w-2xl sm:max-w-3xl md:max-w-4xl lg:max-w-5xl aspect-video max-h-[58vh] rounded-3xl overflow-hidden bg-slate-900 border-2 border-slate-700/80 shadow-2xl transition-all">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover transform scale-x-[-1]"
+          />
+          <button
+            type="button"
+            onClick={onToggleCamera}
+            className="absolute bottom-3 right-3 px-3.5 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 text-xs sm:text-sm text-white transition-all backdrop-blur-xs flex items-center gap-2 shadow-lg"
+          >
+            <Camera className="w-4 h-4 text-[#F26A2B]" />
+            <span>Matikan kamera</span>
+          </button>
+        </div>
       ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-400 p-2 text-center">
-          <div className="w-10 h-10 rounded-full bg-slate-700/80 flex items-center justify-center mb-1 text-slate-300">
-            <User className="w-5 h-5" />
+        <div
+          onClick={onToggleCamera}
+          title="Klik untuk menyalakan kamera"
+          className="flex flex-col items-center justify-center cursor-pointer group my-auto py-6"
+        >
+          {/* Big Blue Circle Avatar "Kamu" */}
+          <div className="w-40 h-40 sm:w-52 sm:h-52 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-4xl sm:text-5xl shadow-2xl transition-transform group-hover:scale-105 active:scale-95 select-none ring-4 ring-[#2563EB]/20">
+            Kamu
           </div>
-          <span className="text-[11px] font-medium flex items-center gap-1 text-slate-400">
-            <VideoOff className="w-3 h-3" />
-            Kamera Nonaktif
+
+          {/* Subtext */}
+          <span className="text-sm sm:text-base text-slate-300 mt-4 font-medium select-none group-hover:text-white transition-colors">
+            Kamera tidak aktif
           </span>
         </div>
       )}
-
-      {/* Label Pratinjau Lokal */}
-      <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none">
-        <span className="px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-xs text-[10px] text-white font-medium">
-          Anda (Lokal)
-        </span>
-        <span
-          className="text-[9px] text-[#FFC857] bg-black/60 px-1 py-0.5 rounded font-mono"
-          title="Pratinjau hanya di perangkat Anda, tidak direkam atau diunggah"
-        >
-          Pribadi
-        </span>
-      </div>
     </div>
   );
 }

@@ -1,25 +1,23 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, CreditCard, Settings, Cpu, GraduationCap } from 'lucide-react';
+import { Sparkles, CreditCard, GraduationCap, Plus } from 'lucide-react';
 import { InterviewStatus, UserSubscription } from '@/types/interview';
 
 interface NavbarProps {
   status: InterviewStatus;
   subscription: UserSubscription;
   onOpenPricing: () => void;
-  onOpenSettings: () => void;
+  onOpenSettings?: () => void;
   onResetToHome: () => void;
-  hasGroqKey: boolean;
+  hasGroqKey?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   status,
   subscription,
   onOpenPricing,
-  onOpenSettings,
   onResetToHome,
-  hasGroqKey,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#2F67BB]/15 bg-white/95 backdrop-blur-md shadow-sm">
@@ -29,14 +27,26 @@ export const Navbar: React.FC<NavbarProps> = ({
           onClick={onResetToHome}
           className="flex items-center space-x-3 text-left group transition-all"
         >
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#2F67BB] via-[#4A8DF0] to-[#FFC857] p-[2px] shadow-sm group-hover:scale-105 transition-transform">
-            <div className="w-full h-full bg-white rounded-[14px] flex items-center justify-center">
-              <GraduationCap className="w-5 h-5 text-[#2F67BB]" />
-            </div>
-          </div>
+          <svg width="34" height="34" viewBox="0 0 512 512" aria-hidden="true" className="shrink-0 transition-transform group-hover:scale-105">
+            <rect width="512" height="512" rx="110" fill="#2F67BB" />
+            <path
+              d="M176 140H336a40 40 0 0 1 40 40V290a40 40 0 0 1-40 40H250L190 388V330H176a40 40 0 0 1-40-40V180a40 40 0 0 1 40-40Z"
+              fill="#fff"
+            />
+            <path
+              d="M184 196 222 288 256 214 290 288 328 196"
+              fill="none"
+              stroke="#F26A2B"
+              strokeWidth="26"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-extrabold text-lg text-[#1B2A41] tracking-tight">Wawancarain</span>
+              <span className="font-fraunces font-bold text-xl text-[#1B2A41] tracking-tight">
+                Wawancarain<span className="text-[#F26A2B]">.</span>
+              </span>
               <span className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full bg-[#EAF2FE] text-[#2F67BB] border border-[#4A8DF0]/25">
                 Real-Time AI
               </span>
@@ -55,40 +65,29 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-          {/* LLM Engine Status Button */}
-          <button
-            onClick={onOpenSettings}
-            className={`hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors ${
-              hasGroqKey
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
-                : 'bg-slate-50 border-slate-200 text-[#1B2A41] hover:border-[#4A8DF0]'
-            }`}
-          >
-            <Cpu className={`w-3.5 h-3.5 ${hasGroqKey ? 'text-emerald-600' : 'text-[#4A8DF0]'}`} />
-            <span>{hasGroqKey ? 'Model AI Terhubung' : 'Mesin AI & Kunci'}</span>
-          </button>
 
-          {/* Settings Icon Button for mobile */}
-          <button
-            onClick={onOpenSettings}
-            className="sm:hidden p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 hover:text-[#1B2A41]"
-            title="Pengaturan AI"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
 
           {/* Quota Badge & Top-up */}
           <button
             onClick={onOpenPricing}
-            className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-[#EAF2FE] border border-[#4A8DF0]/30 hover:border-[#4A8DF0] text-[#1B2A41] text-xs font-semibold transition-colors"
+            title="Tambah Sesi atau Beli Langganan"
+            className="flex items-center space-x-2 pl-3 pr-2 py-1.5 rounded-full bg-[#EAF2FE] border border-[#4A8DF0]/30 hover:border-[#4A8DF0] text-[#1B2A41] text-xs font-semibold transition-all hover:shadow-xs group cursor-pointer"
           >
             <CreditCard className="w-3.5 h-3.5 text-[#2F67BB]" />
             <span>
-              {subscription.freeSessionUsed && subscription.sessionsRemaining <= 0 ? (
+              {subscription.plan === 'pro' || subscription.plan === 'unlimited' ? (
+                <span className="inline-flex items-center gap-1 text-white font-extrabold text-xs px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-[#F26A2B]">
+                  <Sparkles className="w-3 h-3" />
+                  PRO Aktif
+                </span>
+              ) : subscription.freeSessionUsed && subscription.sessionsRemaining <= 0 ? (
                 <span className="text-[#F26A2B] font-bold">Isi Kuota Sesi</span>
               ) : (
                 <span className="text-[#2F67BB]">{subscription.sessionsRemaining} Sesi Tersedia</span>
               )}
+            </span>
+            <span className="w-5 h-5 rounded-full bg-[#2F67BB] group-hover:bg-[#F26A2B] text-white flex items-center justify-center transition-colors">
+              <Plus className="w-3 h-3 stroke-[3]" />
             </span>
           </button>
         </div>

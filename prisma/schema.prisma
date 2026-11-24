@@ -32,6 +32,7 @@ model User {
   id                String             @id @default(cuid())
   email             String?            @unique
   name              String?
+  password          String?
   image             String?
   emailVerified     DateTime?
   credits           Int                @default(1) // Sesi gratis awal = 1 per akun

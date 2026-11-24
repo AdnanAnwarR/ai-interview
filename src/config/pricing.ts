@@ -1,5 +1,5 @@
 // Konfigurasi Paket & Harga Wawancarain
-// Simpan di satu file konfigurasi terpusat agar mudah diubah sewaktu-waktu
+// Terpusat dan sinkron 100% antara tampilan website & checkout payment gateway
 
 export interface PricingPlan {
   id: string;
@@ -26,9 +26,9 @@ export const PRICING_CONFIG: {
       id: 'single_session',
       name: '1 Sesi Latihan',
       tagline: 'Cocok untuk persiapan kilat H-1 wawancara',
-      price: 5000,
-      formattedPrice: 'Rp 5.000',
-      periodText: 'sekali bayar',
+      price: 10000,
+      formattedPrice: 'Rp 10.000',
+      periodText: 'sekali bayar (+1 sesi)',
       type: 'credits',
       sessions: 1,
       isPopular: false,
@@ -44,11 +44,11 @@ export const PRICING_CONFIG: {
     },
     {
       id: 'pack_5_sessions',
-      name: 'Paket 5 Sesi',
+      name: 'Paket 5 Sesi (Siap Kerja)',
       tagline: 'Paling diminati fresh graduate menjelang seleksi kerja',
-      price: 20000,
-      formattedPrice: 'Rp 20.000',
-      periodText: 'sekali bayar (Rp 4.000 / sesi)',
+      price: 40000,
+      formattedPrice: 'Rp 40.000',
+      periodText: 'sekali bayar (Rp 8.000 / sesi)',
       type: 'credits',
       sessions: 5,
       isPopular: true,
@@ -65,17 +65,19 @@ export const PRICING_CONFIG: {
     },
     {
       id: 'unlimited_monthly',
-      name: 'Langganan Bulanan',
+      name: 'Langganan 1 Bulan (PRO)',
       tagline: 'Latihan intensif tanpa batas selama 30 hari penuh',
-      price: 25000,
-      formattedPrice: 'Rp 25.000',
-      periodText: 'per bulan (bebas latihan)',
+      price: 99000,
+      formattedPrice: 'Rp 99.000',
+      periodText: 'per bulan (bebas latihan sepuasnya)',
       type: 'subscription',
       subscriptionDays: 30,
+      sessions: 999,
       isPopular: false,
-      badge: 'Super Hemat',
+      badge: 'Akses PRO',
       features: [
         'Sesi latihan tanpa batas (unlimited) selama 30 hari',
+        'Status akun resmi berubah menjadi PRO',
         'Bebas coba seluruh gaya pewawancara',
         'Mode audio & webcam lokal picture-in-picture',
         'Analisis riwayat komprehensif di dashboard',
@@ -87,5 +89,7 @@ export const PRICING_CONFIG: {
 };
 
 export function getPackageById(packageId: string): PricingPlan | undefined {
-  return PRICING_CONFIG.plans.find((p) => p.id === packageId);
+  return PRICING_CONFIG.plans.find(
+    (p) => p.id === packageId || (packageId === 'pro_pack' && p.id === 'pack_5_sessions')
+  );
 }

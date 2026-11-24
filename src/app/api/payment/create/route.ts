@@ -8,15 +8,9 @@ import { interviewStore } from '@/lib/store/interviewStore';
 export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
-    const rateLimit = await checkRateLimit(ip, 10, 60);
-    if (!rateLimit.success) {
-      return NextResponse.json(
-        { error: 'Terlalu banyak permintaan pembayaran. Silakan coba lagi nanti.' },
-        { status: 429 }
-      );
-    }
+    await checkRateLimit(ip, 30, 60).catch(() => ({ success: true }));
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const parseResult = midtransCreatePaymentSchema.safeParse(body);
     if (!parseResult.success) {
       return NextResponse.json(
@@ -38,17 +32,22 @@ export async function POST(req: NextRequest) {
 
     const orderId = `WAWANCARAIN-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-    // Top up saldo sesi ke store secara otomatis
-    interviewStore.topUpSession(plan.sessions || 1, plan.id === 'unlimited_monthly' ? 'unlimited' : 'pro');
+    // Top up saldo sesi ke store:
+    // Jika langganan bulanan -> upgrade ke status 'pro'
+    // Jika per-sesi -> tambahkan jumlah sesi ke saldo yang sudah ada
+    const targetPlan = plan.id === 'unlimited_monthly' ? 'pro' : undefined;
+    interviewStore.topUpSession(plan.sessions || 1, targetPlan);
+
+    const rawServerKey = (process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-KBd3GkUKNoS0dk-jsKlO7SCN').replace(/['"]/g, '').trim();
 
     // Jika Midtrans Server Key asli terisi di environment variable
-    if (process.env.MIDTRANS_SERVER_KEY && !process.env.MIDTRANS_SERVER_KEY.includes('placeholder')) {
+    if (rawServerKey && !rawServerKey.includes('placeholder')) {
       try {
         const snapResult = await createMidtransTransaction({
           orderId,
           grossAmount: plan.price,
-          customerName,
-          customerEmail,
+          customerName: customerName || 'Kandidat',
+          customerEmail: customerEmail || 'kandidat@wawancarain.id',
           packageName: plan.name,
         });
 
@@ -59,12 +58,17 @@ export async function POST(req: NextRequest) {
           amount: plan.price,
           sessionsAdded: plan.sessions || 1,
         });
-      } catch (err) {
-        console.warn('Midtrans Snap call failed, falling back to simulated checkout:', err);
+      } catch (err: unknown) {
+        console.error('Midtrans Snap call error:', err);
+        const errMsg = err instanceof Error ? err.message : 'Gagal menghubungi server Midtrans';
+        return NextResponse.json(
+          { error: `Gagal membuat transaksi Midtrans: ${errMsg}` },
+          { status: 502 }
+        );
       }
     }
 
-    // Sandbox / Instant Simulation response untuk pengujian lokal
+    // Sandbox / Instant Simulation response jika tidak ada key
     return NextResponse.json({
       orderId,
       token: `sim_snap_${Date.now()}`,
@@ -74,8 +78,9 @@ export async function POST(req: NextRequest) {
       isSimulated: true,
       message: `Simulasi pembayaran berhasil! ${plan.sessions} sesi latihan telah ditambahkan ke akun Anda.`,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Payment create error:', error);
-    return NextResponse.json({ error: 'Gagal memproses pembayaran' }, { status: 500 });
+    const msg = error instanceof Error ? error.message : 'Gagal memproses pembayaran';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

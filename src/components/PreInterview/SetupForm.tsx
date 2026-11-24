@@ -1,18 +1,36 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CandidateProfile, InterviewMode, ExperienceLevel } from '@/types/interview';
 import { extractCvTextFromFile } from '@/lib/pdfParser';
+import { Sparkles } from 'lucide-react';
 
 interface SetupFormProps {
   onStartHardwareTest: (profile: CandidateProfile) => void;
   remainingSessions?: number;
+  plan?: 'free' | 'pro' | 'unlimited';
+  onOpenPricing?: () => void;
 }
 
 export const SetupForm: React.FC<SetupFormProps> = ({
   onStartHardwareTest,
   remainingSessions = 1,
+  plan: propPlan,
+  onOpenPricing,
 }) => {
+  const [internalPlan, setInternalPlan] = useState<'free' | 'pro' | 'unlimited'>('free');
+  const activePlan = propPlan || internalPlan;
+
+  useEffect(() => {
+    fetch('/api/user/balance')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.plan) {
+          setInternalPlan(data.plan);
+        }
+      })
+      .catch(() => {});
+  }, []);
   // Step state (0: Target, 1: Lowongan & CV, 2: Suasana, 3: Cek perangkat, 4: Ringkasan)
   const [cur, setCur] = useState(0);
   const [done, setDone] = useState<Set<number>>(new Set());
@@ -195,9 +213,9 @@ export const SetupForm: React.FC<SetupFormProps> = ({
 
     const profile: CandidateProfile = {
       name: 'Rian Pratama',
-      targetCompany: company.trim(),
-      targetRole: position.trim(),
-      jobDescription: jobDescription.trim(),
+      targetCompany: company.trim() || 'Perusahaan Target',
+      targetRole: position.trim() || 'Posisi',
+      jobDescription: jobDescription.trim() || `Posisi ${position.trim() || 'kandidat'} di ${company.trim() || 'perusahaan'} bertanggung jawab atas pengembangan dan kolaborasi tim.`,
       cvFileName: cvFileName || undefined,
       cvContent: cvText.trim() || 'Kandidat fresh graduate antusias dan siap belajar.',
       experienceLevel: expLevel,
@@ -237,9 +255,42 @@ export const SetupForm: React.FC<SetupFormProps> = ({
             Wawancarain<span className="text-[#F26A2B]">.</span>
           </span>
         </div>
-        <span className="bg-[#EAF2FE] text-[#2F67BB] rounded-full px-3.5 py-1.5 font-semibold text-sm">
-          {remainingSessions} sesi gratis tersisa
-        </span>
+        <div suppressHydrationWarning>
+          {activePlan === 'pro' || activePlan === 'unlimited' ? (
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              className="bg-gradient-to-r from-amber-500 to-[#F26A2B] text-white rounded-full px-4 py-1.5 font-extrabold text-sm shadow-xs flex items-center gap-1.5 cursor-pointer hover:opacity-90 transition-opacity"
+            >
+              <Sparkles className="w-4 h-4" />
+              PRO (Akses 30 Hari Aktif)
+            </button>
+          ) : remainingSessions > 1 ? (
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              className="bg-[#EAF2FE] text-[#2F67BB] rounded-full px-3.5 py-1.5 font-semibold text-sm cursor-pointer hover:bg-[#d8e8fe] transition-colors"
+            >
+              {remainingSessions} sesi latihan tersedia
+            </button>
+          ) : remainingSessions === 1 ? (
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              className="bg-[#EAF2FE] text-[#2F67BB] rounded-full px-3.5 py-1.5 font-semibold text-sm cursor-pointer hover:bg-[#d8e8fe] transition-colors"
+            >
+              1 sesi gratis tersisa
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              className="bg-rose-100 text-rose-700 rounded-full px-3.5 py-1.5 font-bold text-sm cursor-pointer hover:bg-rose-200 transition-colors"
+            >
+              0 sesi (Perlu isi kuota)
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Main Content */}

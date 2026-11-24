@@ -20,8 +20,14 @@ export interface SnapTransactionResult {
  * Menggunakan Server Key dan parameter isProduction
  */
 export function getMidtransSnapClient() {
-  const serverKey = process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-placeholder';
-  const clientKey = process.env.MIDTRANS_CLIENT_KEY || process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || 'SB-Mid-client-placeholder';
+  const rawServerKey = process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-KBd3GkUKNoS0dk-jsKlO7SCN';
+  const rawClientKey =
+    process.env.MIDTRANS_CLIENT_KEY ||
+    process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ||
+    'SB-Mid-client-Z6mjzAdeH-swKhl_';
+
+  const serverKey = rawServerKey.replace(/['"]/g, '').trim();
+  const clientKey = rawClientKey.replace(/['"]/g, '').trim();
   const isProduction = process.env.MIDTRANS_IS_PRODUCTION === 'true';
 
   return new midtransClient.Snap({
@@ -42,19 +48,19 @@ export async function createMidtransTransaction(
   const parameter = {
     transaction_details: {
       order_id: params.orderId,
-      gross_amount: params.grossAmount,
+      gross_amount: Math.round(params.grossAmount),
     },
     item_details: [
       {
-        id: params.orderId,
-        price: params.grossAmount,
+        id: params.orderId.substring(0, 50),
+        price: Math.round(params.grossAmount),
         quantity: 1,
-        name: params.packageName,
+        name: params.packageName.substring(0, 50),
       },
     ],
     customer_details: {
-      first_name: params.customerName,
-      email: params.customerEmail,
+      first_name: params.customerName || 'Kandidat',
+      email: params.customerEmail || 'kandidat@wawancarain.id',
     },
     credit_card: {
       secure: true,
@@ -65,7 +71,7 @@ export async function createMidtransTransaction(
     const transaction = await snap.createTransaction(parameter);
     return {
       token: transaction.token as string,
-      redirectUrl: transaction.redirect_url as string,
+      redirectUrl: (transaction.redirect_url || `https://app.sandbox.midtrans.com/snap/v4/redirection/${transaction.token}`) as string,
     };
   } catch (error) {
     console.error('Gagal membuat transaksi Midtrans Snap:', error);
@@ -83,7 +89,8 @@ export function verifyMidtransSignature(
   grossAmount: string,
   providedSignature: string
 ): boolean {
-  const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
+  const rawServerKey = process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-KBd3GkUKNoS0dk-jsKlO7SCN';
+  const serverKey = rawServerKey.replace(/['"]/g, '').trim();
   if (!serverKey) return false;
 
   const raw = `${orderId}${statusCode}${grossAmount}${serverKey}`;

@@ -150,20 +150,20 @@ Pengalaman Organisasi:
 export const PRICING_TIERS = [
   {
     id: 'single_session',
-    name: '1 Sesi Latihan Tambahan',
-    price: 'Rp 29.000',
-    amount: 29000,
-    description: '1 sesi wawancara 15 menit + evaluasi per-jawaban & scorecard STAR.',
+    name: '1 Sesi Latihan',
+    price: 'Rp 10.000',
+    amount: 10000,
+    description: '1 sesi wawancara 15 menit + evaluasi per-jawaban & scorecard STAR lengkap.',
     sessions: 1,
     popular: false,
-    badge: 'Coba Lagi'
+    badge: 'Starter'
   },
   {
     id: 'pro_pack',
-    name: 'Paket Siap Kerja (5 Sesi)',
-    price: 'Rp 99.000',
-    originalPrice: 'Rp 145.000',
-    amount: 99000,
+    name: 'Paket 5 Sesi (Siap Kerja)',
+    price: 'Rp 40.000',
+    originalPrice: 'Rp 50.000',
+    amount: 40000,
     description: '5 sesi simulasi (HRD & Technical) + umpan balik mendalam setiap jawaban.',
     sessions: 5,
     popular: true,
@@ -171,13 +171,13 @@ export const PRICING_TIERS = [
   },
   {
     id: 'unlimited_monthly',
-    name: 'Paket Akses 30 Hari',
-    price: 'Rp 199.000',
-    originalPrice: 'Rp 350.000',
-    amount: 199000,
-    description: 'Latihan tak terbatas selama 1 bulan penuh menjelang interview impian Anda.',
+    name: 'Langganan 1 Bulan (PRO)',
+    price: 'Rp 99.000',
+    originalPrice: 'Rp 150.000',
+    amount: 99000,
+    description: 'Latihan tak terbatas selama 1 bulan penuh dengan status akun PRO aktif.',
     sessions: 999,
     popular: false,
-    badge: 'Super Hemat'
+    badge: 'Akses PRO'
   }
 ];

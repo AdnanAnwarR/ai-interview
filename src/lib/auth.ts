@@ -1,5 +1,6 @@
 import { getServerSession, type DefaultSession, type NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
+import CredentialsProvider from 'next-auth/providers/credentials';
 import { db } from '@/lib/db';
 
 declare module 'next-auth' {
@@ -18,16 +19,73 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.GOOGLE_CLIENT_ID || 'dummy-google-client-id',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'dummy-google-client-secret',
     }),
+    CredentialsProvider({
+      id: 'credentials',
+      name: 'Email & Password',
+      credentials: {
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' },
+        name: { label: 'Nama', type: 'text' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email) return null;
+        try {
+          const email = credentials.email.trim().toLowerCase();
+          const password = credentials.password || '';
+          const name = credentials.name?.trim() || email.split('@')[0];
+
+          let user = await db.user.findUnique({
+            where: { email },
+          });
+
+          if (!user) {
+            user = await db.user.create({
+              data: {
+                email,
+                name,
+                password,
+                credits: 1, // Sesi gratis awal = 1 per akun
+              },
+            });
+          } else {
+            // Jika akun sudah memiliki kata sandi, validasi kecocokannya
+            if (user.password && user.password !== password) {
+              return null;
+            }
+            if (!user.password && password) {
+              user = await db.user.update({
+                where: { email },
+                data: { password },
+              });
+            }
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            image: user.image,
+          };
+        } catch (err) {
+          console.error('Credentials auth error:', err);
+          return null;
+        }
+      },
+    }),
   ],
   pages: {
     signIn: '/login',
     error: '/login',
   },
   callbacks: {
-    async signIn({ user }) {
+    async signIn({ user, account }) {
       if (!user.email) return false;
+      // Jika login menggunakan credentials, akun sudah divalidasi dan dibuat
+      if (account?.provider === 'credentials') {
+        return true;
+      }
       try {
-        // Upsert user to ensure initial 1 credit
+        // Upsert user to ensure initial 1 credit for OAuth (misal Google)
         await db.user.upsert({
           where: { email: user.email },
           update: {

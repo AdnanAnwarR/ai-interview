@@ -7,11 +7,13 @@ import { SESSION_DURATION_SECONDS, LOW_TIME_WARNING_SECONDS } from '@/lib/consta
 interface LiveCountdownTimerProps {
   onTimeExpired: () => void;
   onLowTimeAlert?: () => void;
+  minimal?: boolean;
 }
 
 export const LiveCountdownTimer: React.FC<LiveCountdownTimerProps> = ({
   onTimeExpired,
   onLowTimeAlert,
+  minimal = false,
 }) => {
   const [secondsRemaining, setSecondsRemaining] = useState(SESSION_DURATION_SECONDS);
   const [lowTimeFired, setLowTimeFired] = useState(false);
@@ -43,6 +45,18 @@ export const LiveCountdownTimer: React.FC<LiveCountdownTimerProps> = ({
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
   const isLowTime = secondsRemaining <= LOW_TIME_WARNING_SECONDS;
+
+  if (minimal) {
+    return (
+      <span
+        className={`font-mono font-bold text-lg sm:text-2xl tracking-wider select-none ${
+          isLowTime ? 'text-rose-400 animate-pulse' : 'text-white'
+        }`}
+      >
+        {formattedTime}
+      </span>
+    );
+  }
 
   return (
     <div

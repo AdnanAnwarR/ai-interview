@@ -46,8 +46,18 @@ export async function GET(
     const lastMessage = session.messages[session.messages.length - 1];
     const currentQuestionIndex = lastMessage?.questionIndex || 1;
 
+    const config = {
+      companyName: session.company,
+      targetRole: session.position,
+      level: session.level,
+      interviewerStyle: session.style,
+      questionCount: session.totalQuestions,
+      answerMode: 'suara',
+    };
+
     return NextResponse.json({
       id: session.id,
+      config,
       company: session.company,
       position: session.position,
       level: session.level,
@@ -57,7 +67,15 @@ export async function GET(
       startedAt: session.startedAt,
       endedAt: session.endedAt,
       currentQuestionIndex,
-      messages: session.messages,
+      messages: session.messages.map((m) => ({
+        id: m.id,
+        sender: (m.role === 'assistant' ? 'ai' : 'user') as 'ai' | 'user',
+        role: m.role,
+        text: m.content,
+        content: m.content,
+        timestamp: new Date(m.createdAt).getTime(),
+        questionIndex: m.questionIndex,
+      })),
       evaluation: session.evaluation
         ? {
             id: session.evaluation.id,

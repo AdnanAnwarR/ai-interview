@@ -121,7 +121,7 @@ if (!globalForStore.__interviewStore) {
   globalForStore.__interviewStore = {
     sessions: initialMap,
     userBalance: {
-      sessionsRemaining: 3, // 3 sesi awal untuk user baru
+      sessionsRemaining: 1, // 1 sesi gratis awal untuk user baru
       plan: 'free',
     },
   };
@@ -192,9 +192,11 @@ export const interviewStore = {
     return false;
   },
 
-  topUpSession(count: number, plan: 'free' | 'pro' | 'unlimited' = 'pro') {
+  topUpSession(count: number, newPlan?: 'free' | 'pro' | 'unlimited') {
     const balance = globalForStore.__interviewStore!.userBalance;
     balance.sessionsRemaining += count;
-    balance.plan = plan;
+    if (newPlan) {
+      balance.plan = newPlan;
+    }
   },
 };

@@ -8,31 +8,34 @@ export const candidateProfileSchema = z.object({
   name: z
     .string()
     .trim()
-    .min(2, { message: 'Nama lengkap minimal 2 karakter' })
-    .max(100, { message: 'Nama lengkap maksimal 100 karakter' }),
+    .min(1, { message: 'Nama lengkap tidak boleh kosong' })
+    .max(100, { message: 'Nama lengkap maksimal 100 karakter' })
+    .default('Kandidat'),
   targetCompany: z
     .string()
     .trim()
-    .min(2, { message: 'Nama perusahaan minimal 2 karakter' })
-    .max(100, { message: 'Nama perusahaan maksimal 100 karakter' }),
+    .min(1, { message: 'Nama perusahaan tidak boleh kosong' })
+    .max(100, { message: 'Nama perusahaan maksimal 100 karakter' })
+    .default('Perusahaan Target'),
   targetRole: z
     .string()
     .trim()
-    .min(2, { message: 'Posisi target minimal 2 karakter' })
-    .max(100, { message: 'Posisi target maksimal 100 karakter' }),
+    .min(1, { message: 'Posisi target tidak boleh kosong' })
+    .max(100, { message: 'Posisi target maksimal 100 karakter' })
+    .default('Posisi'),
   jobDescription: z
     .string()
-    .trim()
-    .min(10, { message: 'Deskripsi pekerjaan minimal 10 karakter' })
-    .max(5000, { message: 'Deskripsi pekerjaan maksimal 5000 karakter' }),
+    .optional()
+    .default('')
+    .transform((val) => (val && val.trim().length >= 5 ? val.trim() : 'Posisi dan tanggung jawab umum pengembangan pada perusahaan target.')),
   cvContent: z
     .string()
     .trim()
     .max(10000, { message: 'Ringkasan CV maksimal 10000 karakter' })
     .default(''),
   cvFileName: z.string().optional(),
-  experienceLevel: experienceLevelSchema,
-  selectedMode: interviewModeSchema,
+  experienceLevel: experienceLevelSchema.default('fresh_graduate'),
+  selectedMode: interviewModeSchema.default('hrd'),
 });
 
 export const chatMessageSchema = z.object({
@@ -46,6 +49,8 @@ export const chatMessageSchema = z.object({
 export const chatRequestSchema = z.object({
   profile: candidateProfileSchema,
   messages: z.array(chatMessageSchema),
+  geminiApiKey: z.string().optional(),
+  geminiModel: z.string().optional(),
   groqApiKey: z.string().optional(),
   groqModel: z.string().optional(),
   anthropicApiKey: z.string().optional(),
@@ -54,6 +59,8 @@ export const chatRequestSchema = z.object({
 export const evaluateRequestSchema = z.object({
   profile: candidateProfileSchema,
   messages: z.array(chatMessageSchema).min(1, { message: 'Transkrip pesan tidak boleh kosong' }),
+  geminiApiKey: z.string().optional(),
+  geminiModel: z.string().optional(),
   groqApiKey: z.string().optional(),
   groqModel: z.string().optional(),
   anthropicApiKey: z.string().optional(),

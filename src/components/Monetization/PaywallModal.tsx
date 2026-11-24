@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { 
   Check, 
   CreditCard, 
-  QrCode, 
   ShieldCheck, 
   X, 
   ArrowRight,
@@ -25,9 +24,30 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
   onSuccessUpgrade,
 }) => {
   const [selectedTier, setSelectedTier] = useState<string>('pro_pack');
-  const [paymentMethod, setPaymentMethod] = useState<'qris' | 'gopay' | 'va'>('qris');
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Load Midtrans Snap client script dynamically
+  React.useEffect(() => {
+    const snapScriptUrl = 'https://app.sandbox.midtrans.com/snap/snap.js';
+    const clientKey = (
+      process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || 'SB-Mid-client-Z6mjzAdeH-swKhl_'
+    ).replace(/['"]/g, '').trim();
+
+    const existing = document.querySelector(`script[src="${snapScriptUrl}"]`);
+    if (existing && existing.getAttribute('data-client-key') !== clientKey) {
+      existing.remove();
+    }
+
+    if (!document.querySelector(`script[src="${snapScriptUrl}"]`)) {
+      const script = document.createElement('script');
+      script.src = snapScriptUrl;
+      script.setAttribute('data-client-key', clientKey);
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
 
   if (!isOpen) return null;
 
@@ -35,9 +55,9 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
 
   const handleCheckout = async () => {
     setIsProcessing(true);
+    setErrorMessage(null);
 
     try {
-      // Call Midtrans Snap backend API
       const res = await fetch('/api/payment/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -49,201 +69,159 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
       });
 
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal memproses transaksi.');
+      }
 
-      // Check if Midtrans Snap token exists in window
       const windowSnap = (window as unknown as { snap?: { pay: (token: string, options: Record<string, unknown>) => void } }).snap;
+      
+      // 1. Coba via Snap Popup
       if (windowSnap && data.token && !data.isSimulated) {
         windowSnap.pay(data.token, {
           onSuccess: () => {
             setPaymentSuccess(true);
             setTimeout(() => {
               onSuccessUpgrade(
-                currentTier.id === 'unlimited_monthly' ? 'unlimited' : 'pro',
+                currentTier.id === 'unlimited_monthly' ? 'pro' : 'free',
                 currentTier.sessions
               );
               onClose();
             }, 1000);
           },
           onPending: () => {
-            alert('Pembayaran Anda sedang diproses. Kuota akan otomatis bertambah setelah transfer selesai.');
+            alert('Menunggu konfirmasi pembayaran Anda.');
             onClose();
           },
           onError: () => {
-            alert('Pembayaran gagal atau dibatalkan.');
+            setErrorMessage('Pembayaran dibatalkan atau terjadi kendala.');
+            setIsProcessing(false);
+          },
+          onClose: () => {
+            setIsProcessing(false);
           },
         });
         setIsProcessing(false);
         return;
       }
 
-      // Instant simulation fallback (for development & offline testing)
+      // 2. Fallback: Direct Redirection ke Midtrans
+      if (data.redirectUrl && !data.isSimulated) {
+        window.location.href = data.redirectUrl;
+        return;
+      }
+
+      // 3. Fallback Simulasi
+      setIsProcessing(false);
+      setPaymentSuccess(true);
       setTimeout(() => {
-        setIsProcessing(false);
-        setPaymentSuccess(true);
-        setTimeout(() => {
-          setPaymentSuccess(false);
-          onSuccessUpgrade(
-            currentTier.id === 'unlimited_monthly' ? 'unlimited' : 'pro',
-            currentTier.sessions
-          );
-          onClose();
-        }, 1200);
+        setPaymentSuccess(false);
+        onSuccessUpgrade(
+          currentTier.id === 'unlimited_monthly' ? 'unlimited' : 'pro',
+          currentTier.sessions
+        );
+        onClose();
       }, 1200);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Checkout error:', err);
       setIsProcessing(false);
+      const msg = err instanceof Error ? err.message : 'Terjadi gangguan saat memproses pembayaran.';
+      setErrorMessage(msg);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-2xl bg-white border border-[#2F67BB]/20 rounded-3xl shadow-2xl overflow-hidden relative">
-        {/* Header */}
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-[#EAF2FE]/40">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#EAF2FE] text-[#2F67BB] border border-[#4A8DF0]/30 flex items-center justify-center shadow-sm">
-              <GraduationCap className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-[#1B2A41]">Tambah Kuota Latihan Wawancarain</h2>
-              <p className="text-xs text-slate-500">Pilih paket latihan untuk mempersiapkan wawancara kerja impian Anda</p>
-            </div>
+        {/* Tombol Tutup */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors z-10"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Modal Header */}
+        <div className="bg-[#EAF2FE] p-6 sm:p-8 border-b border-[#4A8DF0]/20 text-center relative overflow-hidden">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white text-[#2F67BB] text-xs font-bold shadow-xs mb-3">
+            <GraduationCap className="w-4 h-4 text-[#F26A2B]" />
+            <span>Spesial Mahasiswa & Fresh Graduate</span>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1B2A41] tracking-tight">
+            Tingkatkan Persiapan Wawancara Anda
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 mt-2 max-w-lg mx-auto">
+            Dapatkan evaluasi kerangka STAR mendalam, simulasi pertanyaan sulit, dan feedback instan dari AI rekruter.
+          </p>
         </div>
 
-        {/* Pricing Tiers Selection */}
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {PRICING_TIERS.map((tier) => (
-              <div
-                key={tier.id}
-                onClick={() => setSelectedTier(tier.id)}
-                className={`cursor-pointer rounded-2xl p-4 border transition-all relative flex flex-col justify-between ${
-                  selectedTier === tier.id
-                    ? 'border-[#4A8DF0] bg-[#EAF2FE]/60 shadow-sm'
-                    : 'border-slate-200 bg-white hover:border-[#4A8DF0]/40'
-                }`}
-              >
-                {tier.popular && (
-                  <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-[#F26A2B] text-white font-bold text-[9px] uppercase tracking-wider shadow-sm">
-                    {tier.badge}
-                  </span>
-                )}
+        {/* Modal Body */}
+        <div className="p-6 sm:p-8">
+          {errorMessage && (
+            <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs text-center">
+              {errorMessage}
+            </div>
+          )}
 
-                <div>
-                  <h3 className="font-bold text-xs text-[#1B2A41] mb-1">{tier.name}</h3>
-                  <div className="flex items-baseline space-x-1.5 mb-2">
-                    <span className="text-base font-extrabold text-[#1B2A41]">{tier.price}</span>
-                    {tier.originalPrice && (
-                      <span className="text-[10px] text-slate-400 line-through">
-                        {tier.originalPrice}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    {tier.description}
-                  </p>
+          {/* Pilihan Paket */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+            {PRICING_TIERS.map((tier) => {
+              const isSelected = selectedTier === tier.id;
+              return (
+                <div
+                  key={tier.id}
+                  onClick={() => setSelectedTier(tier.id)}
+                  className={`relative p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                    isSelected
+                      ? 'border-[#F26A2B] bg-orange-50/20 shadow-md ring-2 ring-[#F26A2B]/10'
+                      : 'border-slate-200 hover:border-[#4A8DF0]/40 bg-white'
+                  }`}
+                >
+                  {tier.badge && (
+                    <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-[#F26A2B] text-white text-[9px] font-extrabold uppercase tracking-wider">
+                      {tier.badge}
+                    </span>
+                  )}
+                  <p className="text-xs font-bold text-[#1B2A41] mb-1">{tier.name}</p>
+                  <p className="text-base font-extrabold text-[#2F67BB] mb-1">{tier.price}</p>
+                  <p className="text-[11px] text-slate-500 leading-snug">{tier.description}</p>
                 </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500 font-medium">
-                    {tier.sessions === 999 ? 'Akses 30 Hari' : `${tier.sessions} Sesi Lengkap`}
-                  </span>
-                  <div className={`w-4 h-4 rounded-full flex items-center justify-center border ${selectedTier === tier.id ? 'border-[#4A8DF0] bg-[#4A8DF0] text-white' : 'border-slate-300'}`}>
-                    {selectedTier === tier.id && <Check className="w-2.5 h-2.5" />}
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          {/* Payment Method Selector (Midtrans Snap) */}
-          <div className="bg-[#EAF2FE]/40 rounded-2xl p-4 border border-[#4A8DF0]/20 mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-bold text-[#1B2A41]">
-                Metode Pembayaran (Midtrans Snap Gateway)
-              </label>
-              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                Otomatis Terverifikasi
-              </span>
+          {/* Keamanan & Pembayaran */}
+          <div className="mb-6 p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+              <span className="text-xs font-semibold text-[#1B2A41]">Pembayaran Aman via Midtrans Snap</span>
             </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('qris')}
-                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center space-x-2 transition-all ${
-                  paymentMethod === 'qris'
-                    ? 'border-[#4A8DF0] bg-white text-[#2F67BB] font-bold shadow-sm'
-                    : 'border-slate-200 bg-white/70 text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                <QrCode className="w-3.5 h-3.5 text-[#2F67BB]" />
-                <span>QRIS Instant</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('gopay')}
-                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center space-x-2 transition-all ${
-                  paymentMethod === 'gopay'
-                    ? 'border-[#4A8DF0] bg-white text-[#2F67BB] font-bold shadow-sm'
-                    : 'border-slate-200 bg-white/70 text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                <CreditCard className="w-3.5 h-3.5 text-[#2F67BB]" />
-                <span>GoPay / OVO</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('va')}
-                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center space-x-2 transition-all ${
-                  paymentMethod === 'va'
-                    ? 'border-[#4A8DF0] bg-white text-[#2F67BB] font-bold shadow-sm'
-                    : 'border-slate-200 bg-white/70 text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-[#2F67BB]" />
-                <span>Virtual Account</span>
-              </button>
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#2F67BB]">
+              <CreditCard className="w-3.5 h-3.5" />
+              <span>QRIS • BCA • Mandiri • GoPay</span>
             </div>
           </div>
-        </div>
 
-        {/* Footer Checkout Action */}
-        <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-          <div>
-            <p className="text-[11px] text-slate-500 font-medium">Total Pembayaran</p>
-            <p className="text-lg font-extrabold text-[#1B2A41]">{currentTier.price}</p>
-          </div>
-
+          {/* Tombol Eksekusi Checkout */}
           <button
             onClick={handleCheckout}
             disabled={isProcessing || paymentSuccess}
-            className="px-6 py-3 rounded-xl bg-[#F26A2B] hover:bg-[#d95316] text-white font-bold text-xs flex items-center space-x-2 shadow-sm transition-all disabled:opacity-50"
+            className="w-full py-4 rounded-2xl bg-[#F26A2B] hover:bg-[#d95316] text-white font-bold text-sm sm:text-base shadow-lg shadow-[#F26A2B]/20 transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isProcessing ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
-                <span>Memproses Snap...</span>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Mempersiapkan Pembayaran Midtrans...</span>
               </>
             ) : paymentSuccess ? (
               <>
-                <Check className="w-4 h-4 text-white" />
-                <span>Pembayaran Sukses!</span>
+                <Check className="w-5 h-5" />
+                <span>Pembayaran Berhasil! Memperbarui Akun...</span>
               </>
             ) : (
               <>
-                <span>Bayar Sekarang ({currentTier.price})</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Bayar {currentTier.price} Sekarang</span>
+                <ArrowRight className="w-5 h-5" />
               </>
             )}
           </button>

@@ -44,8 +44,12 @@ export async function POST(
       );
     }
 
-    // IDEMPOTEN: Kalau sudah ada Evaluation di database, langsung kembalikan yang ada
-    if (session.evaluation) {
+    // IDEMPOTEN: Kalau sudah ada Evaluation di database, periksa apakah data lama yang cacat
+    const isOutdatedFallback =
+      session.evaluation?.json &&
+      JSON.stringify(session.evaluation.json).includes('Komunikasi jelas, sopan, dan relevan dengan posisi');
+
+    if (session.evaluation && !isOutdatedFallback) {
       return NextResponse.json({
         success: true,
         isExisting: true,
@@ -63,7 +67,7 @@ export async function POST(
       },
     });
 
-    // Kirim seluruh transkrip ke Claude untuk dinilai dengan validasi Zod
+    // Kirim seluruh transkrip ke AI (Gemini / Claude / Analisis Heuristik)
     const evaluationData = await evaluateInterview(
       {
         perusahaan: session.company,
@@ -77,14 +81,25 @@ export async function POST(
       }))
     );
 
-    // Simpan ke model Evaluation di database
-    const savedEvaluation = await db.evaluation.create({
-      data: {
-        sessionId: id,
-        overallScore: evaluationData.overall.score,
-        json: evaluationData as unknown as Prisma.InputJsonValue,
-      },
-    });
+    // Simpan atau perbarui model Evaluation di database
+    let savedEvaluation;
+    if (session.evaluation) {
+      savedEvaluation = await db.evaluation.update({
+        where: { id: session.evaluation.id },
+        data: {
+          overallScore: evaluationData.overall.score,
+          json: evaluationData as unknown as Prisma.InputJsonValue,
+        },
+      });
+    } else {
+      savedEvaluation = await db.evaluation.create({
+        data: {
+          sessionId: id,
+          overallScore: evaluationData.overall.score,
+          json: evaluationData as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,
